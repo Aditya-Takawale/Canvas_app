@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pure Fabric.js Test - NO REACT</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        canvas { border: 2px solid red; margin: 20px 0; }
+        .info { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        .critical { background: #ffebee; border-left: 4px solid #f44336; padding: 10px; }
+    </style>
+</head>
+<body>
+    <div class="critical">
+        <h1>🔬 PURE FABRIC.JS TEST - NO REACT, NO REDUX, NO SOCKET</h1>
+        <p><strong>Critical Test:</strong> If drawings disappear here, it's a Fabric.js library or browser issue.</p>
+        <p><strong>If drawings persist here:</strong> The issue is React-related (component lifecycle, etc.)</p>
+    </div>
+    
+    <div class="info">
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Draw several strokes on the canvas below</li>
+            <li>Watch the object count in the console</li>
+            <li>Wait 5-10 seconds to see if drawings disappear</li>
+            <li>Check console for any errors or canvas clears</li>
+        </ol>
+    </div>
+    
+    <div>
+        <h3>Drawing Canvas (Pure Fabric.js 5.3.0)</h3>
+        <canvas id="fabric-canvas" width="800" height="400"></canvas>
+    </div>
+    
+    <div id="object-count" style="font-weight: bold; color: blue;">
+        Objects: 0
+    </div>
+    
+    <div id="log" style="background: #f9f9f9; padding: 10px; height: 200px; overflow-y: auto; border: 1px solid #ccc; margin-top: 20px;">
+        <h4>Activity Log:</h4>
+    </div>
+
+    <script>
+        console.log('🔬 PURE FABRIC.JS TEST - NO REACT DEPENDENCIES');
+        
+        // Initialize Fabric.js canvas
+        const canvas = new fabric.Canvas('fabric-canvas', {
+            backgroundColor: '#ffffff',
+            isDrawingMode: true
+        });
+        
+        // Set brush properties
+        canvas.freeDrawingBrush.color = '#000000';
+        canvas.freeDrawingBrush.width = 5;
+        
+        // Monitor canvas.clear() calls
+        const originalClear = canvas.clear;
+        canvas.clear = function(...args) {
+            console.error('🚨 FABRIC CANVAS.CLEAR() CALLED!', new Error().stack);
+            log('🚨 CANVAS CLEARED! Check console for stack trace');
+            return originalClear.apply(this, args);
+        };
+        
+        // Logging function
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += `<div>${timestamp}: ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`${timestamp}: ${message}`);
+        }
+        
+        // Update object count display
+        function updateObjectCount() {
+            const count = canvas.getObjects().length;
+            document.getElementById('object-count').textContent = `Objects: ${count}`;
+            return count;
+        }
+        
+        // Event handlers
+        canvas.on('path:created', function(e) {
+            const count = updateObjectCount();
+            log(`✏️ Path created - Objects: ${count}`);
+        });
+        
+        canvas.on('object:added', function(e) {
+            const count = updateObjectCount();
+            log(`➕ Object added - Objects: ${count}`);
+        });
+        
+        canvas.on('object:removed', function(e) {
+            const count = updateObjectCount();
+            log(`❌ Object removed - Objects: ${count}`);
+        });
+        
+        // Periodic monitoring
+        setInterval(() => {
+            const count = updateObjectCount();
+            log(`📊 Periodic check - Objects: ${count}`);
+            
+            // Check if objects exist but canvas appears empty
+            const objects = canvas.getObjects();
+            if (objects.length > 0) {
+                log(`📝 Objects in memory: ${objects.map(o => o.type).join(', ')}`);
+            }
+        }, 5000);
+        
+        log('✅ Pure Fabric.js canvas initialized');
+        log('🎯 Start drawing to test object persistence...');
+        
+        // Additional debugging
+        canvas.on('canvas:cleared', function() {
+            log('🔥 canvas:cleared event fired');
+        });
+        
+        // Monitor rendering
+        let renderCount = 0;
+        const originalRenderAll = canvas.renderAll;
+        canvas.renderAll = function(...args) {
+            renderCount++;
+            if (renderCount % 10 === 0) {
+                log(`🎨 Rendered ${renderCount} times`);
+            }
+            return originalRenderAll.apply(this, args);
+        };
+    </script>
+</body>
+</html>

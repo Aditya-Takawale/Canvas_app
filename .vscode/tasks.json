@@ -1,0 +1,75 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "npm-run-dev",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"dev"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "npm-run-dev",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"dev",
+				"--silent"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "npm-status",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"status",
+				"--silent"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "npm-status",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"status",
+				"--silent"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "npm-stop",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"stop"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "npm-run-dev",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"dev",
+				"--silent"
+			],
+			"isBackground": false,
+			"group": "build"
+		}
+	]
+}

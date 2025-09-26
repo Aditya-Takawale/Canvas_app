@@ -1,0 +1,78 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  role      String   @default("user")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  rooms     Room[]
+  canvases  Canvas[]
+
+  @@map("users")
+}
+
+model Room {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  joinCode    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  creatorId   Int
+  creator     User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  canvas      Canvas?
+  
+  @@map("rooms")
+}
+
+model Canvas {
+  id        Int      @id @default(autoincrement())
+  name      String?
+  width     Int      @default(800)
+  height    Int      @default(600)
+  state     String?    // Stored as JSON string representation of the canvas state
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  roomId    Int      @unique
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  creatorId Int
+  creator   User     @relation(fields: [creatorId], references: [id])
+  operations DrawingOperation[]
+  
+  @@map("canvases")
+}
+
+model DrawingOperation {
+  id        Int      @id @default(autoincrement())
+  objectType String  // Type of object (path, rect, circle, etc.)
+  objectData String    // Object-specific data stored as JSON string
+  action    String  // add, modify, remove, etc.
+  createdAt DateTime @default(now())
+  
+  // Relations
+  canvasId  Int
+  canvas    Canvas   @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  userId    Int
+  
+  @@map("drawing_operations")
+}
