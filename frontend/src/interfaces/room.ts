@@ -129,4 +129,7 @@ export interface CanvasState {
     socketId: string;
     cursorPosition?: { x: number; y: number };
   }[];
+  activeTool: 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'text' | 'select';
+  brushSize: number;
+  brushColor: string;
 }

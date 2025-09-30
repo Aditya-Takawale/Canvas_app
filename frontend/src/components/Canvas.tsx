@@ -244,7 +244,7 @@ const CanvasComponent: React.FC<CanvasProps> = ({
     if (!token) return;
     
     socketRef.current = createCanvasSocket({
-      url: process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001',
+      url: process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
       roomId,
       userId: user.id,
       token,

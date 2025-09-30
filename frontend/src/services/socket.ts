@@ -158,15 +158,23 @@ export const createCanvasSocket = ({
       operation, 
       socketConnected: socket?.connected, 
       hasSocket: !!socket,
-      roomId 
+      roomId,
+      eventName: SocketEvents.DRAWING_EVENT 
     });
     
     if (socket && socket.connected) {
-      console.log('✅ Emitting DRAWING_EVENT to server...');
-      socket.emit(SocketEvents.DRAWING_EVENT, {
+      const payload = {
         ...operation,
         roomId,
+      };
+      console.log('✅ [FRONTEND] Emitting DRAWING_EVENT to server...', {
+        eventName: SocketEvents.DRAWING_EVENT,
+        payload,
+        socketId: socket.id,
+        timestamp: new Date().toISOString()
       });
+      socket.emit(SocketEvents.DRAWING_EVENT, payload);
+      console.log('📤 [FRONTEND] Event emitted successfully');
     } else {
       console.error('❌ Socket not connected or not available!', { 
         hasSocket: !!socket, 

@@ -3,12 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { fetchRoomById } from '../store/slices/roomSlice';
 import { fetchCanvas } from '../store/slices/canvasSlice';
-import Canvas from '../components/Canvas';
-import BasicCanvas from '../components/BasicCanvas';
-import MinimalCanvas from '../components/MinimalCanvas';
-import StableCanvas from '../components/StableCanvas';
-import PureMinimalCanvas from '../components/PureMinimalCanvas';
-import SuperMinimalReactCanvas from '../components/SuperMinimalReactCanvas';
+import FigmaLikeLayout from '../components/FigmaLikeLayout';
 import UserList from '../components/UserList';
 import RoomSettings from '../components/RoomSettings';
 import ChatPanel from '../components/ChatPanel';
@@ -22,32 +17,45 @@ const RoomPage: React.FC = () => {
   
   const { currentRoom, loading: roomLoading, error: roomError } = useAppSelector(state => state.room);
   const { currentCanvas, loading: canvasLoading, error: canvasError } = useAppSelector(state => state.canvas);
-  const { user, isAuthenticated } = useAppSelector(state => state.auth);
+  const { user, isAuthenticated, loading: authLoading } = useAppSelector(state => state.auth);
   
   const [showChat, setShowChat] = useState<boolean>(true);
   const [showUsers, setShowUsers] = useState<boolean>(true);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
   
-  // Check if user is authenticated
+  // Wait for auth to be checked before doing anything
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!authLoading) {
+      setAuthChecked(true);
+    }
+  }, [authLoading]);
+  
+  // Check if user is authenticated - but only after auth has been checked
+  useEffect(() => {
+    if (authChecked && !isAuthenticated) {
+      console.log('🚪 RoomPage: User not authenticated, redirecting to login');
       navigate('/login', { state: { from: `/room/${id}` } });
     }
-  }, [isAuthenticated]);
+  }, [authChecked, isAuthenticated, navigate, id]);
   
-  // Fetch room and canvas data - with duplicate prevention
+  // Fetch room data only when authenticated and auth check is complete
   useEffect(() => {
-    console.log('🔄 RoomPage useEffect triggered', { id, user: !!user, userId: user?.id });
+    console.log('🔄 RoomPage useEffect triggered', { 
+      id, 
+      authChecked, 
+      isAuthenticated, 
+      user: !!user 
+    });
     
-    if (id && user) {
+    if (id && authChecked && isAuthenticated && user) {
       console.log('🚀 Dispatching fetchRoomById...');
       dispatch(fetchRoomById(parseInt(id)));
       
-      // TEMPORARILY DISABLE fetchCanvas to test if this is causing the issue
-      console.log('⚠️ fetchCanvas DISABLED FOR TESTING');
-      // dispatch(fetchCanvas(parseInt(id)));
+      // Canvas component will handle its own state loading
+      console.log('✅ Canvas will handle its own state loading');
     }
-  }, [id, user?.id]); // Use user?.id instead of user to prevent object reference changes
+  }, [id, authChecked, isAuthenticated, user, dispatch]);
   
   // Check if room exists and user has access
   useEffect(() => {
@@ -68,7 +76,12 @@ const RoomPage: React.FC = () => {
     setShowSettings(!showSettings);
   };
   
-  // Show loading state
+  // Show loading state while authentication is being checked
+  if (!authChecked || authLoading) {
+    return <LoadingSpinner />;
+  }
+  
+  // Show loading state while fetching room data
   if (roomLoading || canvasLoading) {
     return <LoadingSpinner />;
   }
@@ -141,8 +154,8 @@ const RoomPage: React.FC = () => {
         <div className="flex-1 flex flex-col">
           {/* Canvas area */}
           <div className="flex-1">
-            {/* FIXED: Using StableCanvas with SIMPLE STYLING (no complex CSS) */}
-            <StableCanvas 
+            <FigmaLikeLayout 
+              key={`canvas-${id}`}
               roomId={parseInt(id || '0')} 
               width={1200}
               height={800}

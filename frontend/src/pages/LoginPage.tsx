@@ -4,182 +4,223 @@ import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { login } from '../services/authThunks';
 import ErrorAlert from '../components/common/ErrorAlert';
 import { Spinner } from '../components/common/Spinner';
+import { FaUser, FaLock } from 'react-icons/fa';
 
 const LoginPage: React.FC = () => {
-  const [emailOrUsername, setEmailOrUsername] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const [loginWithPassword, setLoginWithPassword] = useState(false);
   const dispatch = useAppDispatch();
   const { loading, error } = useAppSelector((state) => state.auth);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     try {
-      // @ts-ignore - Type issues with thunk actions
-      const resultAction = await dispatch(login({ 
-        email: emailOrUsername, // Use the email/username field
-        password 
-      }));
-      
+      // @ts-ignore
+      const resultAction = await dispatch(login({ email: username, password }));
       if (login.fulfilled.match(resultAction)) {
-        // The token is already saved in localStorage by the loginSuccess action
-        // But we can additionally save to sessionStorage if not remember me
-        if (!rememberMe) {
-          const token = localStorage.getItem('token');
-          if (token) {
-            sessionStorage.setItem('auth_token', token);
-          }
-        }
-        
         navigate('/rooms');
       }
-    } catch (error) {
-      console.error('Login error:', error);
+    } catch (err) {
+      console.error('Login failed:', err);
     }
   };
-  
+
+  const containerStyle: React.CSSProperties = {
+    minHeight: '100vh',
+    background: '#f9fafb',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '16px'
+  };
+
+  const cardStyle: React.CSSProperties = {
+    width: '100%',
+    maxWidth: '1024px',
+    display: 'flex',
+    flexDirection: 'row',
+    background: 'white',
+    borderRadius: '16px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    overflow: 'hidden'
+  };
+
+  const leftPanelStyle: React.CSSProperties = {
+    width: '50%',
+    padding: '48px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center'
+  };
+
+  const rightPanelStyle: React.CSSProperties = {
+    width: '50%',
+    background: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 100%)',
+    padding: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative'
+  };
+
+  const titleStyle: React.CSSProperties = {
+    fontSize: '2.5rem',
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: '8px'
+  };
+
+  const subtitleStyle: React.CSSProperties = {
+    color: '#6b7280',
+    marginBottom: '32px'
+  };
+
+  const inputContainerStyle: React.CSSProperties = {
+    position: 'relative',
+    marginBottom: '24px'
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    paddingLeft: '48px',
+    paddingRight: '16px',
+    paddingTop: '12px',
+    paddingBottom: '12px',
+    background: '#f3f4f6',
+    borderRadius: '8px',
+    border: 'none',
+    fontSize: '16px',
+    outline: 'none'
+  };
+
+  const iconStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: '50%',
+    left: '16px',
+    transform: 'translateY(-50%)',
+    color: '#9ca3af'
+  };
+
+  const srOnlyStyle: React.CSSProperties = {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    padding: '0',
+    margin: '-1px',
+    overflow: 'hidden',
+    clip: 'rect(0, 0, 0, 0)',
+    whiteSpace: 'nowrap',
+    border: '0'
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    width: '100%',
+    background: '#111827',
+    color: 'white',
+    fontWeight: 'bold',
+    padding: '12px',
+    borderRadius: '8px',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '16px',
+    marginBottom: '32px'
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      {/* Header with logo */}
-      <header className="border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="text-2xl font-bold text-gray-900">Canvas App</div>
+    <div style={containerStyle}>
+      <div style={cardStyle}>
+        {/* Left Side: Form */}
+        <div style={leftPanelStyle}>
+          <div style={{ marginBottom: '24px' }}>
+            <h1 style={titleStyle}>Welcome</h1>
+            <p style={subtitleStyle}>We are glad to see you back with us</p>
+            <div style={{ 
+              fontSize: '18px', 
+              fontWeight: 'bold', 
+              color: '#ff6b35',
+              marginTop: '8px'
+            }}>
+              Canvas App
+            </div>
+            <div style={{ 
+              fontSize: '14px', 
+              color: '#6b7280',
+              marginTop: '4px'
+            }}>
+              Collaborative Drawing Platform
+            </div>
           </div>
-        </div>
-      </header>
-      
-      <div className="flex flex-1 items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full">
-          <div className="text-center mb-10">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Log in to access the Canvas Visual Collaboration Suite
-            </h1>
-          </div>
-          
-          {error && <ErrorAlert message={error} />}
-          
-          {!loginWithPassword ? (
-            <>
-              {/* Email/username input and next button */}
-              <div className="mb-8">
-                <label htmlFor="email-username" className="block text-sm font-medium text-gray-700 mb-1">
-                  Email or username
-                </label>
-                <input
-                  id="email-username"
-                  name="email"
-                  type="text"
-                  autoComplete="email"
-                  required
-                  className="appearance-none block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  placeholder="Enter your email or username"
-                  value={emailOrUsername}
-                  onChange={(e) => setEmailOrUsername(e.target.value)}
-                />
-              </div>
-              
-              <div className="flex items-center mb-4">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
-                  Remember me
-                </label>
-              </div>
-              
-              <button
-                type="button"
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800"
-                onClick={() => setLoginWithPassword(true)}
-              >
-                Next
-              </button>
-            </>
-          ) : (
-            <form className="space-y-6" onSubmit={handleSubmit}>
-              <div>
-                <label htmlFor="email-username" className="block text-sm font-medium text-gray-700 mb-1">
-                  Email or username
-                </label>
-                <input
-                  id="email-username"
-                  name="email"
-                  type="text"
-                  autoComplete="email"
-                  required
-                  className="appearance-none block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  value={emailOrUsername}
-                  onChange={(e) => setEmailOrUsername(e.target.value)}
-                  disabled
-                />
-              </div>
-              
-              <div>
-                <div className="flex items-center justify-between">
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                    Password
-                  </label>
-                  <div className="text-sm">
-                    <Link to="/forgot-password" className="font-medium text-indigo-600 hover:text-indigo-500">
-                      Forgot password?
-                    </Link>
-                  </div>
-                </div>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  className="appearance-none block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              
-              <div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800"
-                >
-                  {loading ? (
-                    <Spinner size="sm" color="white" />
-                  ) : (
-                    'Log in with password'
-                  )}
-                </button>
-              </div>
-              
-              <div className="text-center">
-                <button 
-                  type="button" 
-                  className="text-sm text-indigo-600 hover:text-indigo-500"
-                  onClick={() => setLoginWithPassword(false)}
-                >
-                  Back to login options
-                </button>
-              </div>
-            </form>
-          )}
-          
-          <div className="mt-10 text-center">
-            <p className="text-sm text-gray-500">
-              Don't have an account? 
-              <Link to="/register" className="font-medium text-indigo-600 hover:text-indigo-500 ml-1">
+
+          <form onSubmit={handleSubmit}>
+            {error && <ErrorAlert message={error} />}
+            
+            <div style={inputContainerStyle}>
+              <label htmlFor="username-input" style={srOnlyStyle}>Username</label>
+              <FaUser style={iconStyle} />
+              <input
+                id="username-input"
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+
+            <div style={inputContainerStyle}>
+              <label htmlFor="password-input" style={srOnlyStyle}>Password</label>
+              <FaLock style={iconStyle} />
+              <input
+                id="password-input"
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={inputStyle}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={buttonStyle}
+            >
+              {loading ? <Spinner size="sm" /> : 'NEXT'}
+            </button>
+          </form>
+
+          <div style={{ textAlign: 'center', marginTop: '32px' }}>
+            <p style={{ fontSize: '14px', color: '#6b7280' }}>
+              Don't have an account?{' '}
+              <Link to="/register" style={{ fontWeight: 'medium', color: '#3b82f6' }}>
                 Sign up
               </Link>
             </p>
+          </div>
+        </div>
+
+        {/* Right Side: Login Art Image */}
+        <div style={rightPanelStyle}>
+          <div style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <img
+              src="/login-art.png"
+              alt="Canvas App - Collaborative Drawing Platform"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                borderRadius: '12px'
+              }}
+            />
           </div>
         </div>
       </div>

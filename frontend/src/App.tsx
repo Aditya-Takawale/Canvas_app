@@ -12,9 +12,18 @@ import Layout from './components/layout/Layout';
 import { selectIsAuthenticated } from './store/slices/authSlice';
 import { checkAuthStatus } from './services/authThunks';
 
-// Protected route component
+// Protected route component with loading state
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const { isAuthenticated, loading } = useAppSelector(state => state.auth);
+  
+  // Show loading while checking authentication
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -25,7 +34,16 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 // Public route component (redirects if already authenticated)
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const { isAuthenticated, loading } = useAppSelector(state => state.auth);
+  
+  // Show loading while checking authentication
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
   
   if (isAuthenticated) {
     return <Navigate to="/rooms" replace />;

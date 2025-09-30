@@ -86,11 +86,26 @@ export const configureSocket = (io: Server): void => {
       userAgent,
       timestamp: new Date().toISOString()
     });
+    
+    console.log('🔌 [BACKEND] New socket connection:', {
+      socketId: socket.id,
+      userId,
+      email,
+      timestamp: new Date().toISOString()
+    });
 
     // Join a room
     socket.on(SocketEvents.JOIN_ROOM, async (roomId: string) => {
       try {
         socket.join(roomId);
+        
+        console.log('🏠 [BACKEND] User joined room:', {
+          socketId: socket.id,
+          userId,
+          email,
+          roomId,
+          timestamp: new Date().toISOString()
+        });
         
         // Log room join
         socketLogger.info({
@@ -169,7 +184,14 @@ export const configureSocket = (io: Server): void => {
     // Handle drawing events
     socket.on(SocketEvents.DRAWING_EVENT, (data: DrawingEventData) => {
       // Add console.log for debugging as suggested
-      console.log('Received drawing data on server:', data);
+      console.log('🎨 [BACKEND] Received drawing data on server:', {
+        roomId: data.roomId,
+        objectType: data.objectType,
+        action: data.action,
+        hasObjectData: !!data.objectData,
+        userId: data.userId,
+        timestamp: new Date().toISOString()
+      });
       
       // Log drawing events at debug level (high volume)
       socketLogger.debug({
@@ -183,7 +205,7 @@ export const configureSocket = (io: Server): void => {
         timestamp: new Date().toISOString()
       });
       
-      // FIX: Use io.to() to broadcast to ALL clients in the room (including sender)
+      // Use io.to() to broadcast to ALL clients in the room (including sender)
       // This ensures the drawing persists on the original client's canvas
       io.to(data.roomId).emit(SocketEvents.DRAWING_EVENT, {
         ...data,
@@ -192,7 +214,7 @@ export const configureSocket = (io: Server): void => {
         timestamp: new Date(),
       });
       
-      console.log('Broadcasted drawing data to all clients in room:', data.roomId);
+      console.log('🚀 [BACKEND] Broadcasted drawing data to all clients in room:', data.roomId);
     });
 
     // Handle cursor movement
@@ -206,6 +228,18 @@ export const configureSocket = (io: Server): void => {
         userId,
         email,
         socketId: socket.id,
+      });
+    });
+
+    // Log all socket events for debugging
+    socket.onAny((eventName, ...args) => {
+      console.log('🎭 [BACKEND] Socket event received:', {
+        eventName,
+        socketId: socket.id,
+        userId,
+        argsCount: args.length,
+        firstArg: args[0] ? JSON.stringify(args[0]).substring(0, 200) : 'none',
+        timestamp: new Date().toISOString()
       });
     });
 

@@ -20,10 +20,12 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const socketRef = useRef<ReturnType<typeof createCanvasSocket> | null>(null);
+  const isDrawing = useRef(false);  // Track drawing state without causing re-renders
   const [selectedTool, setSelectedTool] = useState('pencil');
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushWidth, setBrushWidth] = useState(5);
   const [isRedoing, setIsRedoing] = useState(false);
+  const [isUndoRedoOperation, setIsUndoRedoOperation] = useState(false);
   
   // Undo/Redo state
   const [canvasHistory, setCanvasHistory] = useState<string[]>([]);
@@ -31,12 +33,21 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
   
   const dispatch = useAppDispatch();
   const canvasState = useAppSelector((state) => state.canvas);
+  const { user } = useAppSelector((state) => state.auth);
 
   // STEP 1: Canvas initialization (EXACTLY like SuperMinimal - working!)
   useEffect(() => {
-    console.log('✅ StableCanvas: Starting initialization...');
+    console.log('✅ StableCanvas: Starting initialization...', {
+      hasCanvasRef: !!canvasRef.current,
+      hasFabricCanvas: !!fabricCanvasRef.current,
+      roomId,
+      readOnly,
+      selectedTool,
+      user: user?.id
+    });
     
     if (canvasRef.current && !fabricCanvasRef.current) {
+      console.log('🔧 StableCanvas: Creating new Fabric canvas...');
       fabricCanvasRef.current = new fabric.Canvas(canvasRef.current, {
         width,
         height,
@@ -45,44 +56,114 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
       });
       
       const canvas = fabricCanvasRef.current;
+      console.log('✅ StableCanvas: Fabric canvas created successfully');
       
       // Set initial brush
       if (canvas.freeDrawingBrush) {
         canvas.freeDrawingBrush.color = brushColor;
         canvas.freeDrawingBrush.width = brushWidth;
+        console.log('🖌️ StableCanvas: Brush configured', { color: brushColor, width: brushWidth });
       }
       
-      // Monitor clear (debug)
+      // Monitor canvas clearing and object removal
       const originalClear = canvas.clear;
       canvas.clear = function(...args) {
         console.error('🚨 StableCanvas: CANVAS.CLEAR() CALLED!', new Error().stack);
         return originalClear.apply(this, args);
       };
       
+      const originalRemove = canvas.remove;
+      canvas.remove = function(...args) {
+        console.error('🚨 StableCanvas: CANVAS.REMOVE() CALLED!', {
+          objectsToRemove: args.length,
+          currentObjects: this.getObjects().length,
+          stack: new Error().stack
+        });
+        return originalRemove.apply(this, args);
+      };
+      
+      // Monitor loadFromJSON which might clear the canvas
+      const originalLoadFromJSON = canvas.loadFromJSON;
+      canvas.loadFromJSON = function(json, callback, reviver) {
+        console.error('🚨 StableCanvas: CANVAS.LOADFROMJSON() CALLED!', {
+          currentObjects: this.getObjects().length,
+          stack: new Error().stack
+        });
+        return originalLoadFromJSON.call(this, json, callback, reviver);
+      };
+      
       // Event handlers
       canvas.on('path:created', (e: any) => {
         console.log('✏️ StableCanvas: Path created');
+        const pathCount = canvas.getObjects().length;
+        console.log(`📊 StableCanvas: Objects after path creation: ${pathCount}`);
+        
+        // Set up monitoring to detect object disappearance
+        setTimeout(() => {
+          const count1s = canvas.getObjects().length;
+          console.log(`🕐 StableCanvas: Objects 1s after path creation: ${count1s}`);
+          if (count1s < pathCount) {
+            console.error(`❌ OBJECTS DISAPPEARED! Was ${pathCount}, now ${count1s}`);
+          }
+        }, 1000);
+        
+        setTimeout(() => {
+          const count3s = canvas.getObjects().length;
+          console.log(`🕐 StableCanvas: Objects 3s after path creation: ${count3s}`);
+          if (count3s < pathCount) {
+            console.error(`❌ OBJECTS DISAPPEARED! Was ${pathCount}, now ${count3s}`);
+          }
+        }, 3000);
+        
+        // Create serializable operation data (no Fabric.js objects)
         const operation = {
           type: 'path',
-          data: e.path,
+          timestamp: Date.now(),
+          objectCount: canvas.getObjects().length
         };
         
         console.log('📝 StableCanvas: Operation dispatched to Redux');
         dispatch(addOperation({
           id: Date.now(),
           objectType: 'path',
-          objectData: operation,
+          objectData: operation, // Serializable data only
           action: 'added',
           createdAt: new Date().toISOString(),
           canvasId: roomId,
-          userId: 1
+          userId: user?.id || 1
         }));
         
-        // Socket emission temporarily disabled
-        console.log('🔌 StableCanvas: Socket emission temporarily disabled');
+        // Emit drawing operation via socket
+        if (socketRef.current && socketRef.current.isConnected()) {
+          console.log('🚀 StableCanvas: Emitting drawing operation via socket');
+          socketRef.current.emitDrawingOperation({
+            objectType: 'path',
+            objectData: operation,
+            action: 'added'
+          });
+        } else {
+          console.warn('⚠️ StableCanvas: Socket not connected - operation not sent');
+        }
         
-        // Save state for undo/redo
-        setTimeout(() => saveCanvasState(), 100);
+        // DON'T save state here - too early! Path might not be fully integrated yet.
+      });
+      
+      // Track when user starts drawing
+      canvas.on('mouse:down', () => {
+        if (canvas.isDrawingMode) {
+          isDrawing.current = true;
+          console.log('🖊️ StableCanvas: Drawing started');
+        }
+      });
+      
+      // Save state when user finishes drawing (CORRECT TIMING!)
+      canvas.on('mouse:up', () => {
+        if (isDrawing.current) {
+          console.log('🖊️ StableCanvas: Drawing completed - saving state');
+          // AT THIS POINT: the path/object is guaranteed to be on the canvas
+          setTimeout(() => saveCanvasState(), 50); // Small delay to ensure rendering is complete
+          isDrawing.current = false;
+        }
       });
       
       canvas.on('object:added', () => {
@@ -102,14 +183,48 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
       console.log('✅ StableCanvas: Canvas initialized successfully');
     }
     
-    // NO CLEANUP - let canvas persist
+    // Cleanup function to remove event listeners
+    return () => {
+      if (fabricCanvasRef.current) {
+        fabricCanvasRef.current.off('mouse:down');
+        fabricCanvasRef.current.off('mouse:up');
+      }
+    };
   }, []);
 
-  // STEP 2: Socket initialization (temporarily disabled)
+  // STEP 2: Socket initialization
   useEffect(() => {
-    // Socket integration will be added later
-    console.log('� StableCanvas: Socket integration temporarily disabled');
-  }, [roomId, readOnly]);
+    if (!readOnly && user) {
+      // Get token from auth state
+      const token = localStorage.getItem('token');
+      
+      if (token) {
+        console.log('🔌 StableCanvas: Initializing socket connection...', { userId: user.id, roomId });
+        socketRef.current = createCanvasSocket({
+          url: process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
+          roomId,
+          userId: user.id,
+          token,
+          dispatch,
+        });
+        
+        socketRef.current.connect();
+        console.log('✅ StableCanvas: Socket connected');
+      } else {
+        console.warn('⚠️ StableCanvas: No token available for socket connection');
+      }
+    } else {
+      console.log('📖 StableCanvas: Read-only mode or no user - socket disabled');
+    }
+    
+    // Cleanup
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        console.log('🔌 StableCanvas: Socket disconnected');
+      }
+    };
+  }, [roomId, readOnly, user, dispatch]);
 
   // STEP 3: Tool updates
   useEffect(() => {
@@ -128,28 +243,30 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
     }
   }, [selectedTool, brushColor, brushWidth, readOnly]);
 
+  // TEMPORARILY DISABLE undo/redo functionality to test if it's causing drawing disappearance
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
-    if (readOnly) return;
+    console.log('⚠️ StableCanvas: Undo/Redo keyboard shortcuts DISABLED for testing');
+    // if (readOnly) return;
     
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-      } else if (e.ctrlKey && ((e.key === 'y') || (e.shiftKey && e.key === 'Z'))) {
-        e.preventDefault();
-        handleRedo();
-      }
-    };
+    // const handleKeyDown = (e: KeyboardEvent) => {
+    //   if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+    //     e.preventDefault();
+    //     handleUndo();
+    //   } else if (e.ctrlKey && ((e.key === 'y') || (e.shiftKey && e.key === 'Z'))) {
+    //     e.preventDefault();
+    //     handleRedo();
+    //   }
+    // };
     
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // window.addEventListener('keydown', handleKeyDown);
+    // return () => window.removeEventListener('keydown', handleKeyDown);
   }, [historyIndex, canvasHistory, readOnly]);
 
   // FIXED Undo/Redo functionality
   const saveCanvasState = () => {
-    if (!fabricCanvasRef.current || isRedoing || readOnly) {
-      console.log('⏭️ StableCanvas: Skipping save - canvas not ready, redoing, or read-only');
+    if (!fabricCanvasRef.current || isRedoing || readOnly || isUndoRedoOperation) {
+      console.log('⏭️ StableCanvas: Skipping save - canvas not ready, redoing, read-only, or during undo/redo operation');
       return;
     }
     
@@ -159,89 +276,94 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
     
     // Update both history and index synchronously
     setCanvasHistory(prevHistory => {
-      // Remove any future history if we're not at the end
+      // 1. Get the history up to the current index. This automatically handles
+      //    truncating "future" states if the user has undone and then drawn something new.
       const newHistory = prevHistory.slice(0, historyIndex + 1);
       
-      // Don't save duplicate states
+      // 2. Don't save duplicate states
       if (newHistory.length > 0 && newHistory[newHistory.length - 1] === canvasState) {
         console.log('⏭️ StableCanvas: Skipping duplicate state');
         return prevHistory;
       }
       
+      // 3. Add the new state
       newHistory.push(canvasState);
       
-      // Immediately update the index to match new history
-      const newIndex = newHistory.length - 1;
-      setHistoryIndex(newIndex);
-      
-      // Limit history to 50 states
-      if (newHistory.length > 50) {
-        const trimmedHistory = newHistory.slice(1);
-        setHistoryIndex(newIndex - 1);
-        console.log(`📚 StableCanvas: History trimmed - ${trimmedHistory.length} states, index: ${newIndex - 1}`);
-        return trimmedHistory;
+      // 4. Limit history to 50 states
+      let finalHistory = newHistory;
+      if (finalHistory.length > 50) {
+        finalHistory = finalHistory.slice(-50);
       }
       
-      console.log(`📚 StableCanvas: History updated - ${newHistory.length} states, index: ${newIndex}`);
-      return newHistory;
+      // 5. Set the index to the new end of the history ATOMICALLY
+      const newIndex = finalHistory.length - 1;
+      setHistoryIndex(newIndex);
+      
+      console.log(`📚 StableCanvas: History updated - ${finalHistory.length} states, index is now ${newIndex}`);
+      return finalHistory;
     });
   };
+
+
 
   const handleUndo = () => {
     console.log('↩️ StableCanvas: Undo requested');
     console.log('📊 Current state - Index:', historyIndex, 'Total:', canvasHistory.length);
     
-    if (!fabricCanvasRef.current || historyIndex <= 0 || readOnly) {
+    if (historyIndex > 0 && !readOnly) {
+      const newIndex = historyIndex - 1;
+      console.log(`🔄 StableCanvas: Moving to history index ${newIndex}`);
+      setIsUndoRedoOperation(true);
+      setHistoryIndex(newIndex);
+    } else {
       console.log('❌ StableCanvas: Cannot undo - at beginning or read-only');
-      return;
     }
-    
-    setIsRedoing(true);
-    const prevIndex = historyIndex - 1;
-    const prevState = canvasHistory[prevIndex];
-    
-    console.log(`🔄 StableCanvas: Loading state from index ${prevIndex}`);
-    
-    fabricCanvasRef.current.loadFromJSON(prevState, () => {
-      console.log('✅ StableCanvas: Undo state loaded');
-      fabricCanvasRef.current?.renderAll();
-      setHistoryIndex(prevIndex);
-      
-      setTimeout(() => {
-        setIsRedoing(false);
-        const count = fabricCanvasRef.current?.getObjects().length || 0;
-        console.log(`📊 StableCanvas: Undo completed, objects: ${count}`);
-      }, 50);
-    });
   };
 
   const handleRedo = () => {
     console.log('↪️ StableCanvas: Redo requested');
     console.log('📊 Current state - Index:', historyIndex, 'Total:', canvasHistory.length);
     
-    if (!fabricCanvasRef.current || historyIndex >= canvasHistory.length - 1 || readOnly) {
+    if (historyIndex < canvasHistory.length - 1 && !readOnly) {
+      const newIndex = historyIndex + 1;
+      console.log(`🔄 StableCanvas: Moving to history index ${newIndex}`);
+      setIsUndoRedoOperation(true);
+      setHistoryIndex(newIndex);
+    } else {
       console.log('❌ StableCanvas: Cannot redo - at end or read-only');
-      return;
     }
-    
-    setIsRedoing(true);
-    const nextIndex = historyIndex + 1;
-    const nextState = canvasHistory[nextIndex];
-    
-    console.log(`🔄 StableCanvas: Loading state from index ${nextIndex}`);
-    
-    fabricCanvasRef.current.loadFromJSON(nextState, () => {
-      console.log('✅ StableCanvas: Redo state loaded');
-      fabricCanvasRef.current?.renderAll();
-      setHistoryIndex(nextIndex);
-      
-      setTimeout(() => {
-        setIsRedoing(false);
-        const count = fabricCanvasRef.current?.getObjects().length || 0;
-        console.log(`📊 StableCanvas: Redo completed, objects: ${count}`);
-      }, 50);
-    });
   };
+
+  // TEMPORARILY DISABLE undo/redo state loading to test if it's causing drawing disappearance
+  // Use an effect to load the state when the index changes (only for undo/redo)
+  useEffect(() => {
+    console.log('⚠️ StableCanvas: Undo/Redo state loading DISABLED for testing');
+    // if (!fabricCanvasRef.current || canvasHistory.length === 0 || !isUndoRedoOperation) {
+    //   return;
+    // }
+    
+    // const stateToLoad = canvasHistory[historyIndex];
+    // if (stateToLoad && historyIndex >= 0) {
+    //   console.log(`🔄 StableCanvas: Loading state from index ${historyIndex} (undo/redo operation)`);
+    //   setIsRedoing(true);
+      
+    //   fabricCanvasRef.current.loadFromJSON(stateToLoad, () => {
+    //     fabricCanvasRef.current?.renderAll();
+    //     console.log(`✅ StableCanvas: State loaded from index ${historyIndex}`);
+        
+    //     // Small delay to ensure rendering is complete
+    //     setTimeout(() => {
+    //       setIsRedoing(false);
+    //       setIsUndoRedoOperation(false); // Reset the flag
+    //       const count = fabricCanvasRef.current?.getObjects().length || 0;
+    //       console.log(`📊 StableCanvas: Canvas updated, objects: ${count}`);
+    //     }, 50);
+    //   });
+    // } else {
+    //   // If we can't load the state, just reset the flag
+    //   setIsUndoRedoOperation(false);
+    // }
+  }, [historyIndex, canvasHistory, isUndoRedoOperation]);
 
   const handleClearCanvas = () => {
     if (fabricCanvasRef.current && !readOnly) {

@@ -13,7 +13,10 @@ const initialState: CanvasState = {
   operations: [],
   loading: false,
   error: null,
-  activeUsers: []
+  activeUsers: [],
+  activeTool: 'pencil' as 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'text' | 'select',
+  brushSize: 5,
+  brushColor: '#000000'
 };
 
 // Define history response type
@@ -155,6 +158,15 @@ const canvasSlice = createSlice({
       } else if (action.payload.socketId !== undefined) {
         state.activeUsers = state.activeUsers.filter(user => user.socketId !== action.payload.socketId);
       }
+    },
+    setActiveTool: (state, action: PayloadAction<'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'text' | 'select'>) => {
+      state.activeTool = action.payload;
+    },
+    setBrushSize: (state, action: PayloadAction<number>) => {
+      state.brushSize = action.payload;
+    },
+    setBrushColor: (state, action: PayloadAction<string>) => {
+      state.brushColor = action.payload;
     }
   },
   extraReducers: (builder) => {
@@ -182,13 +194,13 @@ const canvasSlice = createSlice({
       state.error = null;
     });
     builder.addCase(fetchCanvasHistory.fulfilled, (state, action) => {
-      console.log('🔥 fetchCanvasHistory.fulfilled - OVERWRITING OPERATIONS!', {
+      console.log('🔥 fetchCanvasHistory.fulfilled - operations from server:', {
         currentOperations: state.operations.length,
         serverOperations: action.payload.data.operations?.length || 0,
         serverData: action.payload.data
       });
       state.loading = false;
-      state.operations = action.payload.data.operations;
+      state.operations = action.payload.data.operations || [];
       // Only update canvas state if it exists in the response
       if (action.payload.data.state) {
         if (state.currentCanvas) {
@@ -238,7 +250,10 @@ export const {
   setActiveUsers,
   updateUserCursor,
   addActiveUser,
-  removeActiveUser
+  removeActiveUser,
+  setActiveTool,
+  setBrushSize,
+  setBrushColor
 } = canvasSlice.actions;
 
 // Selectors
