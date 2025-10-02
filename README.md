@@ -80,14 +80,22 @@ Canvas_app/
 ### Backend Setup
 1. Navigate to the backend directory: `cd backend`
 2. Install dependencies: `npm install`
-3. Set up environment variables: Copy `.env.example` to `.env` and fill in your MySQL credentials
+3. **🔐 IMPORTANT: Set up environment variables**
+   - Copy `.env.example` to `.env`: `cp .env.example .env`
+   - Generate a secure JWT secret: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+   - Update your `.env` file with the generated secret and database credentials
+   - **See [ENVIRONMENT-SETUP.md](./ENVIRONMENT-SETUP.md) for detailed instructions**
 4. Run Prisma migrations: `npx prisma migrate dev`
 5. Start the development server: `npm run dev`
 
 ### Frontend Setup
 1. Navigate to the frontend directory: `cd frontend`
 2. Install dependencies: `npm install`
-3. Start the development server: `npm start`
+3. Set up environment variables: Create `.env.local` with your API URLs
+4. Start the development server: `npm start`
+
+### 🚨 Security Notice
+**Never commit `.env` files to git!** They contain sensitive secrets that should never be shared publicly.
 
 ## Features
 
