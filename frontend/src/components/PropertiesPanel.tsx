@@ -47,9 +47,11 @@ const PropertyGroup: React.FC<PropertyGroupProps> = ({ title, properties }) => (
           )}
           {prop.type === 'select' && (
             <select
+              id={`property-${prop.label.toLowerCase().replace(/\s+/g, '-')}`}
               value={prop.value}
               onChange={(e) => prop.onChange?.(e.target.value)}
               className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+              aria-label={prop.label}
             >
               {prop.options?.map((option) => (
                 <option key={option} value={option}>
@@ -69,7 +71,9 @@ const PropertyGroup: React.FC<PropertyGroupProps> = ({ title, properties }) => (
  * Shows properties of selected objects similar to Figma's properties panel
  */
 const PropertiesPanel: React.FC = () => {
-  const { activeTool, brushSize, brushColor } = useAppSelector(state => state.canvas);
+  const activeTool = useAppSelector(state => (state.canvas as any).activeTool) as string;
+  const brushSize = useAppSelector(state => (state.canvas as any).brushSize) as number;
+  const brushColor = useAppSelector(state => (state.canvas as any).brushColor) as string;
 
   // Mock selected object for demonstration
   const selectedObject = null; // This would come from canvas selection state

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { setActiveTool, setBrushSize, setBrushColor } from '../store/slices/canvasSlice';
 
@@ -12,43 +12,50 @@ interface ToolButtonProps {
   label: string;
 }
 
-const ToolButton: React.FC<ToolButtonProps> = ({ tool, isActive, onClick, icon, label }) => (
+const ToolButton: React.FC<ToolButtonProps> = memo(({ tool, isActive, onClick, icon, label }) => (
   <button
     onClick={onClick}
     className={`
-      w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200
+      w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-150
       ${isActive 
         ? 'bg-blue-500 text-white shadow-md' 
         : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
       }
     `}
     title={label}
+    aria-label={label}
+    aria-pressed={isActive}
   >
     {icon}
   </button>
-);
+));
 
 /**
  * DrawingToolbar component for left sidebar
  * Provides drawing tools similar to Figma's toolbar
  */
-const DrawingToolbar: React.FC = () => {
+const DrawingToolbar: React.FC = memo(() => {
   const dispatch = useAppDispatch();
-  const activeTool = useAppSelector(state => state.canvas.activeTool);
-  const brushSize = useAppSelector(state => state.canvas.brushSize);
-  const brushColor = useAppSelector(state => state.canvas.brushColor);
+  const activeTool = useAppSelector(state => (state.canvas as any).activeTool) as string;
+  const brushSize = useAppSelector(state => (state.canvas as any).brushSize) as number;
+  const brushColor = useAppSelector(state => (state.canvas as any).brushColor) as string;
 
-  const handleToolChange = (tool: DrawingTool) => {
+  // Memoize event handlers to prevent unnecessary re-renders
+  const handleToolChange = useCallback((tool: DrawingTool) => {
     dispatch(setActiveTool(tool));
-  };
+  }, [dispatch]);
 
-  const handleBrushSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBrushSizeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     dispatch(setBrushSize(parseInt(e.target.value)));
-  };
+  }, [dispatch]);
 
-  const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleColorChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     dispatch(setBrushColor(e.target.value));
-  };
+  }, [dispatch]);
+
+  const handleColorPresetClick = useCallback((color: string) => {
+    dispatch(setBrushColor(color));
+  }, [dispatch]);
 
   const tools: Array<{ tool: DrawingTool; icon: React.ReactNode; label: string }> = [
     {
@@ -168,9 +175,9 @@ const DrawingToolbar: React.FC = () => {
   ];
 
   return (
-    <div className="bg-white border-r border-gray-200 w-16 flex flex-col items-center py-4 space-y-4">
+    <div className="bg-white border-r border-gray-200 w-16 flex flex-col items-center py-4 space-y-4" role="toolbar" aria-label="Drawing tools">
       {/* Tools Section */}
-      <div className="space-y-2">
+      <div className="space-y-2" role="group" aria-label="Drawing tool selection">
         {tools.map(({ tool, icon, label }) => (
           <ToolButton
             key={tool}
@@ -188,16 +195,18 @@ const DrawingToolbar: React.FC = () => {
 
       {/* Brush Size */}
       <div className="flex flex-col items-center space-y-2">
-        <div className="text-xs text-gray-500 font-medium">Size</div>
+        <label htmlFor="brush-size-slider" className="text-xs text-gray-500 font-medium">Size</label>
         <input
+          id="brush-size-slider"
           type="range"
           min="1"
           max="50"
           value={brushSize}
           onChange={handleBrushSizeChange}
           className="w-12 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer transform rotate-90"
+          aria-label={`Brush size: ${brushSize} pixels`}
         />
-        <div className="text-xs text-gray-600">{brushSize}</div>
+        <div className="text-xs text-gray-600" aria-hidden="true">{brushSize}</div>
       </div>
 
       {/* Divider */}
@@ -205,42 +214,46 @@ const DrawingToolbar: React.FC = () => {
 
       {/* Color Picker */}
       <div className="flex flex-col items-center space-y-2">
-        <div className="text-xs text-gray-500 font-medium">Color</div>
+        <label htmlFor="color-picker-input" className="text-xs text-gray-500 font-medium">Color</label>
         
         {/* Current Color Display */}
         <div
           className="w-8 h-8 rounded border-2 border-gray-300 cursor-pointer"
           style={{ backgroundColor: brushColor }}
-          title="Current Color"
+          title={`Current color: ${brushColor}`}
+          aria-label={`Current brush color is ${brushColor}`}
+          role="img"
         />
 
         {/* Color Input */}
         <input
+          id="color-picker-input"
           type="color"
           value={brushColor}
           onChange={handleColorChange}
           className="w-8 h-6 border-none cursor-pointer"
-          title="Pick Color"
+          aria-label="Choose brush color"
         />
 
         {/* Color Presets */}
-        <div className="grid grid-cols-2 gap-1 mt-2">
+        <div className="grid grid-cols-2 gap-1 mt-2" role="group" aria-label="Color presets">
           {colorPresets.map((color) => (
             <button
               key={color}
-              onClick={() => dispatch(setBrushColor(color))}
+              onClick={() => handleColorPresetClick(color)}
               className={`
                 w-3 h-3 rounded border cursor-pointer transition-transform hover:scale-110
                 ${brushColor === color ? 'border-blue-500 border-2' : 'border-gray-300'}
               `}
               style={{ backgroundColor: color }}
-              title={color}
+              aria-label={`Set brush color to ${color}`}
+              title={`Color: ${color}`}
             />
           ))}
         </div>
       </div>
     </div>
   );
-};
+});
 
 export default DrawingToolbar;

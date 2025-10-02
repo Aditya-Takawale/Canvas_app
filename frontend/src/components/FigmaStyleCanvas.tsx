@@ -53,10 +53,10 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
   const { user } = useAppSelector((state) => state.auth);
   const { currentCanvas } = useAppSelector((state) => state.canvas);
 
-  // Get tool properties from Redux store (with fallbacks for TypeScript)
-  const activeTool = (useAppSelector(state => (state.canvas as any).activeTool) || 'pencil') as string;
-  const brushSize = (useAppSelector(state => (state.canvas as any).brushSize) || 5) as number;
-  const brushColor = (useAppSelector(state => (state.canvas as any).brushColor) || '#000000') as string;
+  // Optimized tool state selectors
+  const activeTool = useAppSelector(state => (state.canvas as any).activeTool || 'pencil') as string;
+  const brushSize = useAppSelector(state => (state.canvas as any).brushSize || 5) as number;
+  const brushColor = useAppSelector(state => (state.canvas as any).brushColor || '#000000') as string;
 
   // Clear canvas when room changes to fix cross-room sharing
   useEffect(() => {
@@ -78,65 +78,63 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
     currentRoomIdRef.current = roomId;
   }, [roomId]);
 
-  // Apply tool settings to canvas when tool or properties change
+  // Optimized tool settings application with debouncing
   const applyToolSettings = useCallback(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
+    // Skip if already applying the same tool settings
+    const currentSettings = `${activeTool}-${brushSize}-${brushColor}`;
+    if ((canvas as any)._lastToolSettings === currentSettings) {
+      return;
+    }
+    
     console.log('🛠️ FigmaStyle: Applying tool settings:', { activeTool, brushSize, brushColor });
+    
+    // Store settings to prevent duplicate applications
+    (canvas as any)._lastToolSettings = currentSettings;
 
-    // Reset all drawing modes first
+    // Batch canvas updates to reduce renders
+    canvas.skipTargetFind = activeTool !== 'select';
     canvas.isDrawingMode = false;
     canvas.selection = false;
     canvas.defaultCursor = 'default';
     canvas.hoverCursor = 'move';
     canvas.moveCursor = 'move';
 
-    // Set brush properties
+    // Set brush properties once
     if (canvas.freeDrawingBrush) {
       canvas.freeDrawingBrush.width = brushSize;
       canvas.freeDrawingBrush.color = brushColor;
     }
 
-    // Apply tool-specific settings
+    // Apply tool-specific settings with minimal operations
     switch (activeTool) {
       case 'pencil':
         canvas.isDrawingMode = true;
-        canvas.selection = false;
         canvas.defaultCursor = 'crosshair';
-        console.log('🖌️ FigmaStyle: Switched to pencil drawing mode');
         break;
 
       case 'eraser':
         canvas.isDrawingMode = true;
-        canvas.selection = false;
         canvas.defaultCursor = 'crosshair';
         if (canvas.freeDrawingBrush) {
-          // Create eraser brush with white color
           canvas.freeDrawingBrush.color = canvas.backgroundColor as string || '#ffffff';
         }
-        console.log('🧽 FigmaStyle: Switched to eraser mode');
         break;
 
       case 'select':
-        canvas.isDrawingMode = false;
         canvas.selection = true;
-        canvas.defaultCursor = 'default';
-        console.log('👆 FigmaStyle: Switched to selection mode');
+        canvas.skipTargetFind = false;
         break;
 
       case 'pan':
-        canvas.isDrawingMode = false;
-        canvas.selection = false;
         canvas.defaultCursor = 'grab';
-        console.log('🤏 FigmaStyle: Switched to pan mode');
         break;
 
       case 'text':
-        canvas.isDrawingMode = false;
         canvas.selection = true;
         canvas.defaultCursor = 'text';
-        console.log('📝 FigmaStyle: Switched to text mode');
         break;
 
       case 'rectangle':
@@ -146,26 +144,25 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
       case 'arrow':
       case 'star':
       case 'polygon':
-        canvas.isDrawingMode = false;
-        canvas.selection = false;
         canvas.defaultCursor = 'crosshair';
-        console.log(`📐 FigmaStyle: Switched to ${activeTool} mode`);
         break;
 
       default:
-        canvas.isDrawingMode = false;
         canvas.selection = true;
-        canvas.defaultCursor = 'default';
-        console.log('🎯 FigmaStyle: Default selection mode');
     }
 
-    canvas.renderAll();
+    // Single render call at the end
+    canvas.requestRenderAll();
   }, [activeTool, brushSize, brushColor]);
 
-  // Apply tool settings when they change
+  // Apply tool settings when they change (debounced for performance)
   useEffect(() => {
-    applyToolSettings();
-  }, [applyToolSettings]);
+    const timeoutId = setTimeout(() => {
+      applyToolSettings();
+    }, 50); // 50ms debounce for smoother tool switching
+
+    return () => clearTimeout(timeoutId);
+  }, [activeTool, brushSize, brushColor]);
 
   // Shape creation functions
   const createShape = useCallback((startPoint: { x: number; y: number }, endPoint: { x: number; y: number }, shapeType: string) => {
@@ -301,14 +298,14 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
     return shape;
   }, [brushColor, brushSize]);
 
-  // Mouse event handlers for shape creation
+  // Optimized mouse event handlers with performance improvements
   const handleMouseDown = useCallback((e: fabric.IEvent<MouseEvent>) => {
     if (!fabricCanvasRef.current) return;
 
     const canvas = fabricCanvasRef.current;
     const pointer = canvas.getPointer(e.e);
 
-    // Handle different tools
+    // Handle different tools with minimal processing
     switch (activeTool) {
       case 'text':
         // Create text object at click position
@@ -338,7 +335,7 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
         break;
 
       case 'pan':
-        // Enable canvas panning
+        // Enable canvas panning with minimal state changes
         panStateRef.current.isDragging = true;
         canvas.selection = false;
         panStateRef.current.lastPosX = e.e.clientX;
@@ -354,7 +351,7 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
     const pointer = canvas.getPointer(e.e);
 
     if (activeTool === 'pan' && panStateRef.current.isDragging) {
-      // Handle canvas panning
+      // Handle canvas panning with minimal operations
       const vpt = canvas.viewportTransform;
       if (vpt) {
         vpt[4] += e.e.clientX - panStateRef.current.lastPosX;
@@ -364,7 +361,7 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
         panStateRef.current.lastPosY = e.e.clientY;
       }
     } else if (isDrawingShapeRef.current && shapeStartPointRef.current) {
-      // Handle shape drawing preview
+      // Handle shape drawing preview with reduced operations
       if (currentShapeRef.current) {
         canvas.remove(currentShapeRef.current);
       }
@@ -376,7 +373,7 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
         shape.opacity = 0.5;
         canvas.add(shape);
         currentShapeRef.current = shape;
-        canvas.renderAll();
+        canvas.requestRenderAll(); // Use requestRenderAll for better performance
       }
     }
   }, [activeTool, createShape]);

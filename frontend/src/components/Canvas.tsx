@@ -878,25 +878,79 @@ const CanvasComponent: React.FC<CanvasProps> = ({
 
           {/* Style controls */}
           <div className="flex items-center space-x-3">
-            <input type="color" value={color} onChange={(e) => handleColorChange(e.target.value)} className="w-8 h-8 rounded border border-gray-300 cursor-pointer" title="Stroke"/>
-            <input type="color" value={fillColor === 'transparent' ? '#ffffff' : fillColor} onChange={(e) => setFillColor(e.target.value)} className="w-8 h-8 rounded border border-gray-300 cursor-pointer" title="Fill"/>
-            <button className="px-2 py-1 text-xs border rounded" onClick={() => setFillColor('transparent')} title="Transparent Fill">⧅</button>
-            <div className="text-sm text-gray-600">{brushSize}px</div>
-            <input type="range" min="1" max="20" value={brushSize} onChange={(e) => handleBrushSizeChange(parseInt(e.target.value))} className="w-20"/>
+            <label htmlFor="stroke-color-input" className="sr-only">Stroke Color</label>
+            <input 
+              id="stroke-color-input"
+              type="color" 
+              value={color} 
+              onChange={(e) => handleColorChange(e.target.value)} 
+              className="w-8 h-8 rounded border border-gray-300 cursor-pointer" 
+              aria-label="Stroke color"
+            />
+            <label htmlFor="fill-color-input" className="sr-only">Fill Color</label>
+            <input 
+              id="fill-color-input"
+              type="color" 
+              value={fillColor === 'transparent' ? '#ffffff' : fillColor} 
+              onChange={(e) => setFillColor(e.target.value)} 
+              className="w-8 h-8 rounded border border-gray-300 cursor-pointer" 
+              aria-label="Fill color"
+            />
+            <button className="px-2 py-1 text-xs border rounded" onClick={() => setFillColor('transparent')} title="Transparent Fill" aria-label="Set fill to transparent">⧅</button>
+            <div className="text-sm text-gray-600" aria-hidden="true">{brushSize}px</div>
+            <label htmlFor="brush-size-input" className="sr-only">Brush Size</label>
+            <input 
+              id="brush-size-input"
+              type="range" 
+              min="1" 
+              max="20" 
+              value={brushSize} 
+              onChange={(e) => handleBrushSizeChange(parseInt(e.target.value))} 
+              className="w-20"
+              aria-label={`Brush size: ${brushSize} pixels`}
+            />
             <div className="flex items-center space-x-1">
               <button className={`px-2 py-1 text-xs border rounded ${strokeStyle==='solid'?'bg-indigo-100 border-indigo-400':''}`} onClick={() => setStrokeStyle('solid')} title="Solid">—</button>
               <button className={`px-2 py-1 text-xs border rounded ${strokeStyle==='dashed'?'bg-indigo-100 border-indigo-400':''}`} onClick={() => setStrokeStyle('dashed')} title="Dashed">- -</button>
               <button className={`px-2 py-1 text-xs border rounded ${strokeStyle==='dotted'?'bg-indigo-100 border-indigo-400':''}`} onClick={() => setStrokeStyle('dotted')} title="Dotted">⋯</button>
             </div>
             <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-600">Opacity</span>
-              <input type="range" min="0" max="1" step="0.05" value={opacity} onChange={(e)=>setOpacity(parseFloat(e.target.value))} className="w-24" />
+              <label htmlFor="opacity-slider" className="text-sm text-gray-600">Opacity</label>
+              <input 
+                id="opacity-slider"
+                type="range" 
+                min="0" 
+                max="1" 
+                step="0.05" 
+                value={opacity} 
+                onChange={(e)=>setOpacity(parseFloat(e.target.value))} 
+                className="w-24"
+                aria-label={`Opacity: ${Math.round(opacity * 100)}%`}
+              />
             </div>
             {currentTool === DrawingTools.ARROW && (
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Heads</span>
-                <label className="text-xs flex items-center space-x-1"><input type="checkbox" checked={arrowHeadStart} onChange={(e)=>setArrowHeadStart(e.target.checked)} /> <span>Start</span></label>
-                <label className="text-xs flex items-center space-x-1"><input type="checkbox" checked={arrowHeadEnd} onChange={(e)=>setArrowHeadEnd(e.target.checked)} /> <span>End</span></label>
+                <span className="text-sm text-gray-600" id="arrow-heads-group">Heads</span>
+                <label htmlFor="arrow-head-start" className="text-xs flex items-center space-x-1">
+                  <input 
+                    id="arrow-head-start"
+                    type="checkbox" 
+                    checked={arrowHeadStart} 
+                    onChange={(e)=>setArrowHeadStart(e.target.checked)}
+                    aria-describedby="arrow-heads-group"
+                  /> 
+                  <span>Start</span>
+                </label>
+                <label htmlFor="arrow-head-end" className="text-xs flex items-center space-x-1">
+                  <input 
+                    id="arrow-head-end"
+                    type="checkbox" 
+                    checked={arrowHeadEnd} 
+                    onChange={(e)=>setArrowHeadEnd(e.target.checked)}
+                    aria-describedby="arrow-heads-group"
+                  /> 
+                  <span>End</span>
+                </label>
               </div>
             )}
           </div>
