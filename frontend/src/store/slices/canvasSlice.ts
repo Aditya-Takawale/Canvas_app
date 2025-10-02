@@ -14,7 +14,7 @@ const initialState: CanvasState = {
   loading: false,
   error: null,
   activeUsers: [],
-  activeTool: 'pencil' as 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'text' | 'select',
+  activeTool: 'pencil' as 'select' | 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'text' | 'pan',
   brushSize: 5,
   brushColor: '#000000'
 };
@@ -159,7 +159,7 @@ const canvasSlice = createSlice({
         state.activeUsers = state.activeUsers.filter(user => user.socketId !== action.payload.socketId);
       }
     },
-    setActiveTool: (state, action: PayloadAction<'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'text' | 'select'>) => {
+    setActiveTool: (state, action: PayloadAction<'select' | 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'text' | 'pan'>) => {
       state.activeTool = action.payload;
     },
     setBrushSize: (state, action: PayloadAction<number>) => {

@@ -12,7 +12,7 @@ interface FigmaStyleCanvasProps {
 }
 
 /**
- * FIGMA-STYLE CANVAS COMPONENT
+ * FIGMA-STYLE CANVAS COMPONENT WITH ROOM ISOLATION AND TOOL SUPPORT
  * Based on successful patterns from Figma clones and collaborative canvas apps
  * 
  * Key principles:
@@ -21,6 +21,8 @@ interface FigmaStyleCanvasProps {
  * 3. Proper object lifecycle management
  * 4. Separate rendering from state updates
  * 5. Event handler stability
+ * 6. Room isolation - clear canvas when switching rooms
+ * 7. Tool integration - connect Redux tool state to canvas
  */
 const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({ 
   roomId, 
@@ -35,10 +37,381 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isLoadingStateRef = useRef(false);
   const lastRestoredStateRef = useRef<string | null>(null);
+  const currentRoomIdRef = useRef<number | null>(null);
+  
+  // Shape drawing state
+  const isDrawingShapeRef = useRef(false);
+  const shapeStartPointRef = useRef<{ x: number; y: number } | null>(null);
+  const currentShapeRef = useRef<fabric.Object | null>(null);
+  const panStateRef = useRef<{ isDragging: boolean; lastPosX: number; lastPosY: number }>({
+    isDragging: false,
+    lastPosX: 0,
+    lastPosY: 0,
+  });
   
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const { currentCanvas } = useAppSelector((state) => state.canvas);
+
+  // Get tool properties from Redux store (with fallbacks for TypeScript)
+  const activeTool = (useAppSelector(state => (state.canvas as any).activeTool) || 'pencil') as string;
+  const brushSize = (useAppSelector(state => (state.canvas as any).brushSize) || 5) as number;
+  const brushColor = (useAppSelector(state => (state.canvas as any).brushColor) || '#000000') as string;
+
+  // Clear canvas when room changes to fix cross-room sharing
+  useEffect(() => {
+    if (currentRoomIdRef.current !== null && currentRoomIdRef.current !== roomId) {
+      console.log(`🧹 FigmaStyle: Room changed from ${currentRoomIdRef.current} to ${roomId}, clearing canvas`);
+      
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        // Clear canvas objects and reset state
+        canvas.clear();
+        canvas.backgroundColor = '#ffffff';
+        canvas.renderAll();
+        
+        // Reset state tracking refs
+        lastRestoredStateRef.current = null;
+        isLoadingStateRef.current = false;
+      }
+    }
+    currentRoomIdRef.current = roomId;
+  }, [roomId]);
+
+  // Apply tool settings to canvas when tool or properties change
+  const applyToolSettings = useCallback(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+
+    console.log('🛠️ FigmaStyle: Applying tool settings:', { activeTool, brushSize, brushColor });
+
+    // Reset all drawing modes first
+    canvas.isDrawingMode = false;
+    canvas.selection = false;
+    canvas.defaultCursor = 'default';
+    canvas.hoverCursor = 'move';
+    canvas.moveCursor = 'move';
+
+    // Set brush properties
+    if (canvas.freeDrawingBrush) {
+      canvas.freeDrawingBrush.width = brushSize;
+      canvas.freeDrawingBrush.color = brushColor;
+    }
+
+    // Apply tool-specific settings
+    switch (activeTool) {
+      case 'pencil':
+        canvas.isDrawingMode = true;
+        canvas.selection = false;
+        canvas.defaultCursor = 'crosshair';
+        console.log('🖌️ FigmaStyle: Switched to pencil drawing mode');
+        break;
+
+      case 'eraser':
+        canvas.isDrawingMode = true;
+        canvas.selection = false;
+        canvas.defaultCursor = 'crosshair';
+        if (canvas.freeDrawingBrush) {
+          // Create eraser brush with white color
+          canvas.freeDrawingBrush.color = canvas.backgroundColor as string || '#ffffff';
+        }
+        console.log('🧽 FigmaStyle: Switched to eraser mode');
+        break;
+
+      case 'select':
+        canvas.isDrawingMode = false;
+        canvas.selection = true;
+        canvas.defaultCursor = 'default';
+        console.log('👆 FigmaStyle: Switched to selection mode');
+        break;
+
+      case 'pan':
+        canvas.isDrawingMode = false;
+        canvas.selection = false;
+        canvas.defaultCursor = 'grab';
+        console.log('🤏 FigmaStyle: Switched to pan mode');
+        break;
+
+      case 'text':
+        canvas.isDrawingMode = false;
+        canvas.selection = true;
+        canvas.defaultCursor = 'text';
+        console.log('📝 FigmaStyle: Switched to text mode');
+        break;
+
+      case 'rectangle':
+      case 'circle':
+      case 'triangle':
+      case 'line':
+      case 'arrow':
+      case 'star':
+      case 'polygon':
+        canvas.isDrawingMode = false;
+        canvas.selection = false;
+        canvas.defaultCursor = 'crosshair';
+        console.log(`📐 FigmaStyle: Switched to ${activeTool} mode`);
+        break;
+
+      default:
+        canvas.isDrawingMode = false;
+        canvas.selection = true;
+        canvas.defaultCursor = 'default';
+        console.log('🎯 FigmaStyle: Default selection mode');
+    }
+
+    canvas.renderAll();
+  }, [activeTool, brushSize, brushColor]);
+
+  // Apply tool settings when they change
+  useEffect(() => {
+    applyToolSettings();
+  }, [applyToolSettings]);
+
+  // Shape creation functions
+  const createShape = useCallback((startPoint: { x: number; y: number }, endPoint: { x: number; y: number }, shapeType: string) => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return null;
+
+    const width = Math.abs(endPoint.x - startPoint.x);
+    const height = Math.abs(endPoint.y - startPoint.y);
+    const left = Math.min(startPoint.x, endPoint.x);
+    const top = Math.min(startPoint.y, endPoint.y);
+
+    const shapeOptions = {
+      left,
+      top,
+      fill: 'transparent',
+      stroke: brushColor,
+      strokeWidth: Math.max(1, brushSize / 5),
+      selectable: true,
+      evented: true,
+    };
+
+    let shape: fabric.Object | null = null;
+
+    switch (shapeType) {
+      case 'rectangle':
+        shape = new fabric.Rect({
+          ...shapeOptions,
+          width,
+          height,
+        });
+        break;
+
+      case 'circle':
+        const radius = Math.min(width, height) / 2;
+        shape = new fabric.Circle({
+          ...shapeOptions,
+          radius,
+          left: left + width / 2 - radius,
+          top: top + height / 2 - radius,
+        });
+        break;
+
+      case 'triangle':
+        const points = [
+          { x: left + width / 2, y: top },
+          { x: left, y: top + height },
+          { x: left + width, y: top + height },
+        ];
+        shape = new fabric.Triangle({
+          ...shapeOptions,
+          width,
+          height,
+        });
+        break;
+
+      case 'line':
+        shape = new fabric.Line([startPoint.x, startPoint.y, endPoint.x, endPoint.y], {
+          ...shapeOptions,
+          fill: '',
+        });
+        break;
+
+      case 'arrow':
+        // Create arrow using a group of line and triangle
+        const arrowLine = new fabric.Line([0, 0, width, 0], {
+          stroke: brushColor,
+          strokeWidth: Math.max(1, brushSize / 5),
+        });
+
+        const arrowHead = new fabric.Triangle({
+          width: 10,
+          height: 10,
+          fill: brushColor,
+          left: width - 5,
+          top: -5,
+          angle: 90,
+        });
+
+        shape = new fabric.Group([arrowLine, arrowHead], {
+          ...shapeOptions,
+          left,
+          top,
+        });
+        break;
+
+      case 'star':
+        // Create a 5-pointed star
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const outerRadius = Math.min(width, height) / 2;
+        const innerRadius = outerRadius * 0.4;
+        const starPoints: { x: number; y: number }[] = [];
+
+        for (let i = 0; i < 10; i++) {
+          const angle = (i * Math.PI) / 5;
+          const radius = i % 2 === 0 ? outerRadius : innerRadius;
+          starPoints.push({
+            x: centerX + radius * Math.cos(angle - Math.PI / 2),
+            y: centerY + radius * Math.sin(angle - Math.PI / 2),
+          });
+        }
+
+        shape = new fabric.Polygon(starPoints, {
+          ...shapeOptions,
+          left,
+          top,
+        });
+        break;
+
+      case 'polygon':
+        // Create a hexagon
+        const hexPoints: { x: number; y: number }[] = [];
+        const hexCenterX = width / 2;
+        const hexCenterY = height / 2;
+        const hexRadius = Math.min(width, height) / 2;
+
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * Math.PI) / 3;
+          hexPoints.push({
+            x: hexCenterX + hexRadius * Math.cos(angle),
+            y: hexCenterY + hexRadius * Math.sin(angle),
+          });
+        }
+
+        shape = new fabric.Polygon(hexPoints, {
+          ...shapeOptions,
+          left,
+          top,
+        });
+        break;
+    }
+
+    return shape;
+  }, [brushColor, brushSize]);
+
+  // Mouse event handlers for shape creation
+  const handleMouseDown = useCallback((e: fabric.IEvent<MouseEvent>) => {
+    if (!fabricCanvasRef.current) return;
+
+    const canvas = fabricCanvasRef.current;
+    const pointer = canvas.getPointer(e.e);
+
+    // Handle different tools
+    switch (activeTool) {
+      case 'text':
+        // Create text object at click position
+        const text = new fabric.IText('Type here...', {
+          left: pointer.x,
+          top: pointer.y,
+          fontFamily: 'Arial',
+          fontSize: Math.max(12, brushSize * 2),
+          fill: brushColor,
+          selectable: true,
+          evented: true,
+        });
+        canvas.add(text);
+        canvas.setActiveObject(text);
+        text.enterEditing();
+        break;
+
+      case 'rectangle':
+      case 'circle':
+      case 'triangle':
+      case 'line':
+      case 'arrow':
+      case 'star':
+      case 'polygon':
+        isDrawingShapeRef.current = true;
+        shapeStartPointRef.current = { x: pointer.x, y: pointer.y };
+        break;
+
+      case 'pan':
+        // Enable canvas panning
+        panStateRef.current.isDragging = true;
+        canvas.selection = false;
+        panStateRef.current.lastPosX = e.e.clientX;
+        panStateRef.current.lastPosY = e.e.clientY;
+        break;
+    }
+  }, [activeTool, brushColor, brushSize]);
+
+  const handleMouseMove = useCallback((e: fabric.IEvent<MouseEvent>) => {
+    if (!fabricCanvasRef.current) return;
+
+    const canvas = fabricCanvasRef.current;
+    const pointer = canvas.getPointer(e.e);
+
+    if (activeTool === 'pan' && panStateRef.current.isDragging) {
+      // Handle canvas panning
+      const vpt = canvas.viewportTransform;
+      if (vpt) {
+        vpt[4] += e.e.clientX - panStateRef.current.lastPosX;
+        vpt[5] += e.e.clientY - panStateRef.current.lastPosY;
+        canvas.requestRenderAll();
+        panStateRef.current.lastPosX = e.e.clientX;
+        panStateRef.current.lastPosY = e.e.clientY;
+      }
+    } else if (isDrawingShapeRef.current && shapeStartPointRef.current) {
+      // Handle shape drawing preview
+      if (currentShapeRef.current) {
+        canvas.remove(currentShapeRef.current);
+      }
+
+      const shape = createShape(shapeStartPointRef.current, pointer, activeTool);
+      if (shape) {
+        shape.selectable = false;
+        shape.evented = false;
+        shape.opacity = 0.5;
+        canvas.add(shape);
+        currentShapeRef.current = shape;
+        canvas.renderAll();
+      }
+    }
+  }, [activeTool, createShape]);
+
+  const handleMouseUp = useCallback((e: fabric.IEvent<MouseEvent>) => {
+    if (!fabricCanvasRef.current) return;
+
+    const canvas = fabricCanvasRef.current;
+    const pointer = canvas.getPointer(e.e);
+
+    if (activeTool === 'pan') {
+      // Stop panning
+      panStateRef.current.isDragging = false;
+      canvas.selection = true;
+    } else if (isDrawingShapeRef.current && shapeStartPointRef.current) {
+      // Finalize shape creation
+      if (currentShapeRef.current) {
+        canvas.remove(currentShapeRef.current);
+      }
+
+      const shape = createShape(shapeStartPointRef.current, pointer, activeTool);
+      if (shape) {
+        shape.selectable = true;
+        shape.evented = true;
+        shape.opacity = 1;
+        canvas.add(shape);
+        canvas.setActiveObject(shape);
+      }
+
+      // Reset shape drawing state
+      isDrawingShapeRef.current = false;
+      shapeStartPointRef.current = null;
+      currentShapeRef.current = null;
+    }
+  }, [activeTool, createShape]);
 
   // Debounced save function with room isolation
   const debouncedSave = useCallback(() => {
@@ -192,13 +565,21 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
       canvas.freeDrawingBrush.width = 3;
     }
 
+    // Apply initial tool settings
+    applyToolSettings();
+
     // Log canvas operations for debugging (non-intrusive)
-    console.log('� FigmaStyle: Canvas ready with dimensions:', { width, height });
+    console.log('🎨 FigmaStyle: Canvas ready with dimensions:', { width, height });
 
     // Attach stable event handlers
     canvas.on('path:created', handlePathCreated);
     canvas.on('object:added', handleObjectAdded);
     canvas.on('object:removed', handleObjectRemoved);
+    
+    // Attach mouse event handlers for shape creation and interaction
+    canvas.on('mouse:down', handleMouseDown);
+    canvas.on('mouse:move', handleMouseMove);
+    canvas.on('mouse:up', handleMouseUp);
 
     console.log('✅ FigmaStyle: Canvas initialization complete');
 
@@ -288,6 +669,9 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
           canvas.on('object:added', handleObjectAdded);
           canvas.on('object:removed', handleObjectRemoved);
           isLoadingStateRef.current = false;
+          
+          // Apply tool settings after state restoration
+          applyToolSettings();
         }, 100);
       });
     } catch (error) {
@@ -300,7 +684,7 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
       isLoadingStateRef.current = false;
       lastRestoredStateRef.current = null; // Allow retry
     }
-  }, [currentCanvas?.state, handlePathCreated, handleObjectAdded, handleObjectRemoved]);
+  }, [currentCanvas?.state, handlePathCreated, handleObjectAdded, handleObjectRemoved, applyToolSettings]);
 
   // Tool controls
   const handleToggleDrawing = () => {
@@ -363,7 +747,13 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
         gap: '12px',
         flexWrap: 'wrap'
       }}>
-        <h3 style={{ margin: 0, color: '#333' }}>🎨 Figma-Style Canvas - Room {roomId}</h3>
+        <h3 style={{ margin: 0, color: '#333' }}>🎨 Enhanced Canvas - Room {roomId}</h3>
+        
+        <div style={{ fontSize: '12px', color: '#666', display: 'flex', gap: '8px' }}>
+          <span>Tool: {activeTool}</span>
+          <span>Size: {brushSize}px</span>
+          <span>Color: {brushColor}</span>
+        </div>
         
         <button
           onClick={handleToggleDrawing}

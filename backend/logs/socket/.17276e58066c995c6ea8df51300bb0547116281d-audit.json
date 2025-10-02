@@ -19,6 +19,21 @@
             "date": 1758867786266,
             "name": "logs\\socket\\2025-09-26.log",
             "hash": "281b2a7f7e2720be2e9656e808e3ed7d07cf9c4395b73c1b6e3f3cbcc722c87b"
+        },
+        {
+            "date": 1759223111557,
+            "name": "logs\\socket\\2025-09-30.log",
+            "hash": "0570934ef5ea4b2b350d5946e6b4a270dac2ba7ede5f164ee93f0e8d2a8856ab"
+        },
+        {
+            "date": 1759304349253,
+            "name": "logs\\socket\\2025-10-01.log",
+            "hash": "b677edbf0e5f777192b02277e63fd4f0cfd0ad15bf47333b3838aa456a192bf8"
+        },
+        {
+            "date": 1759385391998,
+            "name": "logs\\socket\\2025-10-02.log",
+            "hash": "19cad56dee5e3136774ab5b4b37f45317330196bb0cbfee7fa45c963a1929cac"
         }
     ],
     "hashType": "sha256"

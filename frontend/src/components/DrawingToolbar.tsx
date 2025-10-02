@@ -2,7 +2,7 @@ import React from 'react';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { setActiveTool, setBrushSize, setBrushColor } from '../store/slices/canvasSlice';
 
-type DrawingTool = 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'text' | 'select';
+type DrawingTool = 'select' | 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'text' | 'pan';
 
 interface ToolButtonProps {
   tool: DrawingTool;
@@ -34,7 +34,9 @@ const ToolButton: React.FC<ToolButtonProps> = ({ tool, isActive, onClick, icon, 
  */
 const DrawingToolbar: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { activeTool, brushSize, brushColor } = useAppSelector(state => state.canvas);
+  const activeTool = useAppSelector(state => state.canvas.activeTool);
+  const brushSize = useAppSelector(state => state.canvas.brushSize);
+  const brushColor = useAppSelector(state => state.canvas.brushColor);
 
   const handleToolChange = (tool: DrawingTool) => {
     dispatch(setActiveTool(tool));
@@ -57,6 +59,15 @@ const DrawingToolbar: React.FC = () => {
         </svg>
       ),
       label: 'Select (V)',
+    },
+    {
+      tool: 'pan',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M13,6V11H18V7.75L22.25,12L18,16.25V13H13V18H16.25L12,22.25L7.75,18H11V13H6V16.25L1.75,12L6,7.75V11H11V6H7.75L12,1.75L16.25,6H13Z" />
+        </svg>
+      ),
+      label: 'Pan (H)',
     },
     {
       tool: 'pencil',
@@ -95,6 +106,15 @@ const DrawingToolbar: React.FC = () => {
       label: 'Circle (O)',
     },
     {
+      tool: 'triangle',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polygon points="12,2 22,20 2,20" />
+        </svg>
+      ),
+      label: 'Triangle (T)',
+    },
+    {
       tool: 'line',
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -102,6 +122,34 @@ const DrawingToolbar: React.FC = () => {
         </svg>
       ),
       label: 'Line (L)',
+    },
+    {
+      tool: 'arrow',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="7" y1="17" x2="17" y2="7" />
+          <polyline points="17,7 17,13 11,7" />
+        </svg>
+      ),
+      label: 'Arrow (A)',
+    },
+    {
+      tool: 'star',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26 12,2" />
+        </svg>
+      ),
+      label: 'Star (S)',
+    },
+    {
+      tool: 'polygon',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5 12,2" />
+        </svg>
+      ),
+      label: 'Polygon (G)',
     },
     {
       tool: 'text',
