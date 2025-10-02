@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { fabric } from 'fabric';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { addOperation } from '../store/slices/canvasSlice';
@@ -34,6 +34,9 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
   const dispatch = useAppDispatch();
   const canvasState = useAppSelector((state) => state.canvas);
   const { user } = useAppSelector((state) => state.auth);
+  
+  // Stable user reference to prevent useEffect re-runs
+  const userId = useMemo(() => user?.id, [user?.id]);
 
   // STEP 1: Canvas initialization (EXACTLY like SuperMinimal - working!)
   useEffect(() => {
@@ -224,7 +227,7 @@ const StableCanvas: React.FC<StableCanvasProps> = ({
         console.log('🔌 StableCanvas: Socket disconnected');
       }
     };
-  }, [roomId, readOnly, user, dispatch]);
+  }, [roomId, readOnly, userId, dispatch]);
 
   // STEP 3: Tool updates
   useEffect(() => {

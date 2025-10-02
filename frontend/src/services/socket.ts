@@ -42,6 +42,7 @@ interface CanvasSocket {
   emitDrawingOperation: (operation: Omit<DrawingOperation, 'id' | 'createdAt' | 'canvasId' | 'userId'>) => void;
   emitCursorPosition: (position: { x: number; y: number }) => void;
   isConnected: () => boolean;
+  emitChatMessage?: (data: { message: string; roomId: number; userId: number; username: string; timestamp: string }) => void;
 }
 
 export const createCanvasSocket = ({
@@ -55,8 +56,12 @@ export const createCanvasSocket = ({
 
   const connect = (): void => {
     if (socket) {
+      console.log('🔌 Socket: Disconnecting previous socket before new connection');
       socket.disconnect();
+      socket = null;
     }
+
+    console.log('🔌 Socket: Creating new connection to room:', roomId);
 
     // Connect to the socket server with authentication token and room ID
     socket = io(url, {
@@ -72,14 +77,14 @@ export const createCanvasSocket = ({
 
     // Set up socket event listeners
     socket.on('connect', () => {
-      console.log('Connected to canvas socket');
+      console.log('🔌 Socket: Connected to server, joining room:', roomId);
       
       // Join the room after successful connection
       socket?.emit(SocketEvents.JOIN_ROOM, roomId.toString());
     });
 
     socket.on('connect_error', (err: Error) => {
-      console.error('Socket connection error:', err.message);
+      console.error('❌ Socket connection error:', err.message);
     });
 
     socket.on('disconnect', (reason: string) => {
@@ -146,10 +151,16 @@ export const createCanvasSocket = ({
 
   const disconnect = (): void => {
     if (socket) {
+      console.log('🔌 Socket: Leaving room before disconnect:', roomId);
       // Leave the room before disconnecting
       socket.emit(SocketEvents.LEAVE_ROOM, roomId.toString());
-      socket.disconnect();
-      socket = null;
+      
+      // Add a small delay to ensure the leave room event is processed
+      setTimeout(() => {
+        socket?.disconnect();
+        socket = null;
+        console.log('🔌 Socket: Disconnected from room:', roomId);
+      }, 50);
     }
   };
 
@@ -197,12 +208,27 @@ export const createCanvasSocket = ({
     return socket !== null && socket.connected;
   };
 
+  // Add chat message emitter
+  const emitChatMessage = (data: { message: string; roomId: number; userId: number; username: string; timestamp: string }): void => {
+    if (socket && socket.connected) {
+      console.log('🗨️ Emitting chat message:', data);
+      socket.emit(SocketEvents.CHAT_MESSAGE, data);
+    } else {
+      console.error('❌ Cannot send chat message: Socket not connected', { 
+        hasSocket: !!socket,
+        connected: socket?.connected,
+        data
+      });
+    }
+  };
+
   return {
     socket,
     connect,
     disconnect,
     emitDrawingOperation,
     emitCursorPosition,
+    emitChatMessage,
     isConnected
   };
 };

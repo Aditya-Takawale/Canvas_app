@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import { fabric } from 'fabric';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
-import { addOperation, saveCanvasState, fetchCanvas } from '../store/slices/canvasSlice';
+import { addOperation, saveCanvasState, fetchCanvas, clearOperations, fetchCanvasHistory } from '../store/slices/canvasSlice';
 import { createCanvasSocket } from '../services/socket';
+import roomLoadingManager from '../services/roomLoadingManager';
 
 interface FigmaStyleCanvasProps {
   roomId: number;
@@ -51,32 +52,16 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
   
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
+  
+  // Stable user reference to prevent useEffect re-runs
+  const userId = useMemo(() => user?.id, [user?.id]);
+  
   const { currentCanvas } = useAppSelector((state) => state.canvas);
 
   // Optimized tool state selectors
   const activeTool = useAppSelector(state => (state.canvas as any).activeTool || 'pencil') as string;
   const brushSize = useAppSelector(state => (state.canvas as any).brushSize || 5) as number;
   const brushColor = useAppSelector(state => (state.canvas as any).brushColor || '#000000') as string;
-
-  // Clear canvas when room changes to fix cross-room sharing
-  useEffect(() => {
-    if (currentRoomIdRef.current !== null && currentRoomIdRef.current !== roomId) {
-      console.log(`🧹 FigmaStyle: Room changed from ${currentRoomIdRef.current} to ${roomId}, clearing canvas`);
-      
-      const canvas = fabricCanvasRef.current;
-      if (canvas) {
-        // Clear canvas objects and reset state
-        canvas.clear();
-        canvas.backgroundColor = '#ffffff';
-        canvas.renderAll();
-        
-        // Reset state tracking refs
-        lastRestoredStateRef.current = null;
-        isLoadingStateRef.current = false;
-      }
-    }
-    currentRoomIdRef.current = roomId;
-  }, [roomId]);
 
   // Optimized tool settings application with debouncing
   const applyToolSettings = useCallback(() => {
@@ -443,26 +428,62 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
     }, 5000); // Increased to 5 seconds to reduce save frequency
   }, [roomId, dispatch, currentCanvas]);
 
-  // Load canvas state from database - ONLY ONCE
+  // Load canvas state from database using singleton room loading manager
   const loadCanvasState = useCallback(async () => {
-    if (isLoadingStateRef.current) return; // Prevent multiple loads
-    
-    console.log('📥 FigmaStyle: Loading canvas state from database...');
-    isLoadingStateRef.current = true;
+    console.log('🚀 FigmaStyle: Starting loadCanvasState for room:', roomId);
     
     try {
-      // Only fetch if we don't already have canvas state to prevent infinite loops
-      if (!currentCanvas?.state) {
+      await roomLoadingManager.loadRoom(roomId, async () => {
+        console.log('� FigmaStyle: Loading canvas state and history for room:', roomId);
+        
+        // Clear operations first to reset state
+        dispatch(clearOperations());
+        
+        // Fetch canvas and history
         await dispatch(fetchCanvas(roomId));
-      } else {
-        console.log('📋 FigmaStyle: Canvas state already loaded, skipping fetch');
-        isLoadingStateRef.current = false;
-      }
+        await dispatch(fetchCanvasHistory({ roomId }));
+        
+        console.log('✅ FigmaStyle: Canvas and history loaded for room:', roomId);
+      });
     } catch (error) {
       console.error('❌ FigmaStyle: Failed to load canvas state:', error);
-      isLoadingStateRef.current = false;
     }
-  }, [roomId, dispatch, currentCanvas?.state]);
+  }, [roomId, dispatch]);
+
+  // Clear canvas when room changes to fix cross-room sharing - MOVED HERE
+  useEffect(() => {
+    if (currentRoomIdRef.current !== null && currentRoomIdRef.current !== roomId) {
+      console.log(`🧹 FigmaStyle: Room changed from ${currentRoomIdRef.current} to ${roomId}, clearing canvas`);
+      
+      // Cancel any ongoing room loading for the previous room
+      roomLoadingManager.cancelRoomLoading(currentRoomIdRef.current);
+      
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        // Clear canvas objects and reset state
+        canvas.clear();
+        canvas.backgroundColor = '#ffffff';
+        canvas.renderAll();
+        
+        // Reset state tracking refs
+        lastRestoredStateRef.current = null;
+        isLoadingStateRef.current = false;
+      }
+      
+      // Clear Redux operations immediately for room isolation
+      dispatch(clearOperations());
+      
+      // Disconnect existing socket to prevent cross-room events
+      if (socketRef.current) {
+        console.log('🔌 FigmaStyle: Disconnecting old socket for room change');
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    }
+    currentRoomIdRef.current = roomId;
+    
+    // Note: Canvas state loading is now handled by the socket connection useEffect
+  }, [roomId, dispatch]); // Removed loadCanvasState from dependencies to prevent infinite loop
 
   // Stable event handlers using useCallback
   const handlePathCreated = useCallback((e: any) => {
@@ -513,7 +534,7 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
         console.error(`❌ FigmaStyle: Objects disappeared! Was ${objectCount}, now ${currentCount}`);
       }
     }, 1000);
-  }, [user, roomId, dispatch, debouncedSave]);
+  }, [userId, roomId, dispatch, debouncedSave]);
 
   const handleObjectAdded = useCallback((e: any) => {
     const canvas = fabricCanvasRef.current;
@@ -581,11 +602,8 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
     console.log('✅ FigmaStyle: Canvas initialization complete');
 
     // Load existing canvas state from database - ONLY ONCE during initialization
-    setTimeout(() => {
-      if (fabricCanvasRef.current === canvas) { // Ensure canvas is still valid
-        loadCanvasState();
-      }
-    }, 200); // Slightly longer delay to ensure stability
+    // Note: Canvas state loading is now handled by the socket connection useEffect
+    // This ensures loading happens only after socket is connected
 
     // Cleanup function
     return () => {
@@ -605,15 +623,27 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
     };
   }, []); // CRITICAL: Empty dependencies - only run once
 
-  // Socket initialization - separate from canvas
+  // Socket connection management with stable useEffect
   useEffect(() => {
-    if (!user || readOnly) return;
+    // Skip if missing required data or read-only mode
+    if (!user || readOnly) {
+      return;
+    }
 
     const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) {
+      return;
+    }
 
-    console.log('🔌 FigmaStyle: Initializing socket connection');
+    console.log('🔌 FigmaStyle: Initializing stable socket connection for room:', roomId);
     
+    // Clean up any existing connection
+    if (socketRef.current) {
+      console.log('🧹 FigmaStyle: Cleaning up previous socket connection');
+      socketRef.current.disconnect();
+    }
+
+    // Create socket connection
     socketRef.current = createCanvasSocket({
       url: process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
       roomId,
@@ -623,14 +653,21 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
     });
 
     socketRef.current.connect();
+    console.log('✅ FigmaStyle: Socket connected for room:', roomId);
+    
+    // Load canvas state once socket is connected
+    setTimeout(() => {
+      loadCanvasState();
+    }, 100); // Small delay to ensure socket is fully connected
 
     return () => {
       if (socketRef.current) {
+        console.log('🧹 FigmaStyle: Disconnecting socket for room:', roomId);
         socketRef.current.disconnect();
-        console.log('🔌 FigmaStyle: Socket disconnected');
+        socketRef.current = null;
       }
     };
-  }, [roomId, user, dispatch, readOnly]);
+  }, [roomId]); // Only re-run when roomId changes
 
   // Canvas state restoration from database - STABLE VERSION  
   useEffect(() => {
@@ -682,6 +719,16 @@ const FigmaStyleCanvas: React.FC<FigmaStyleCanvasProps> = ({
       lastRestoredStateRef.current = null; // Allow retry
     }
   }, [currentCanvas?.state, handlePathCreated, handleObjectAdded, handleObjectRemoved, applyToolSettings]);
+
+  // Component cleanup - cancel loading when unmounting
+  useEffect(() => {
+    return () => {
+      if (roomId) {
+        console.log('🧹 FigmaStyle: Component unmounting, cancelling room loading for:', roomId);
+        roomLoadingManager.cancelRoomLoading(roomId);
+      }
+    };
+  }, [roomId]);
 
   // Tool controls
   const handleToggleDrawing = () => {

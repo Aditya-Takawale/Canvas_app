@@ -18,50 +18,59 @@ const PropertyGroup: React.FC<PropertyGroupProps> = ({ title, properties }) => (
   <div className="mb-6">
     <h3 className="text-sm font-semibold text-gray-700 mb-3">{title}</h3>
     <div className="space-y-3">
-      {properties.map((prop, index) => (
-        <div key={index} className="flex flex-col">
-          <label className="text-xs text-gray-600 mb-1">{prop.label}</label>
-          {prop.type === 'text' && (
-            <input
-              type="text"
-              value={prop.value}
-              onChange={(e) => prop.onChange?.(e.target.value)}
-              className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-            />
-          )}
-          {prop.type === 'number' && (
-            <input
-              type="number"
-              value={prop.value}
-              onChange={(e) => prop.onChange?.(Number(e.target.value))}
-              className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-            />
-          )}
-          {prop.type === 'color' && (
-            <input
-              type="color"
-              value={prop.value}
-              onChange={(e) => prop.onChange?.(e.target.value)}
-              className="w-full h-8 border border-gray-300 rounded cursor-pointer"
-            />
-          )}
-          {prop.type === 'select' && (
-            <select
-              id={`property-${prop.label.toLowerCase().replace(/\s+/g, '-')}`}
-              value={prop.value}
-              onChange={(e) => prop.onChange?.(e.target.value)}
-              className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-              aria-label={prop.label}
-            >
-              {prop.options?.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      ))}
+      {properties.map((prop, index) => {
+        const inputId = `property-${title.toLowerCase().replace(/\s+/g, '-')}-${prop.label.toLowerCase().replace(/\s+/g, '-')}-${index}`;
+        return (
+          <div key={index} className="flex flex-col">
+            <label htmlFor={inputId} className="text-xs text-gray-600 mb-1">{prop.label}</label>
+            {prop.type === 'text' && (
+              <input
+                id={inputId}
+                type="text"
+                value={prop.value}
+                onChange={(e) => prop.onChange?.(e.target.value)}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                aria-label={prop.label}
+              />
+            )}
+            {prop.type === 'number' && (
+              <input
+                id={inputId}
+                type="number"
+                value={prop.value}
+                onChange={(e) => prop.onChange?.(Number(e.target.value))}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                aria-label={prop.label}
+              />
+            )}
+            {prop.type === 'color' && (
+              <input
+                id={inputId}
+                type="color"
+                value={prop.value}
+                onChange={(e) => prop.onChange?.(e.target.value)}
+                className="w-full h-8 border border-gray-300 rounded cursor-pointer"
+                aria-label={prop.label}
+              />
+            )}
+            {prop.type === 'select' && (
+              <select
+                id={inputId}
+                value={prop.value}
+                onChange={(e) => prop.onChange?.(e.target.value)}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                aria-label={prop.label}
+              >
+                {prop.options?.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        );
+      })}
     </div>
   </div>
 );

@@ -230,6 +230,42 @@ export const configureSocket = (io: Server): void => {
         socketId: socket.id,
       });
     });
+    
+    // Handle chat messages
+    socket.on(SocketEvents.CHAT_MESSAGE, (data: { roomId: string | number; userId: number; username: string; message: string; timestamp: string }) => {
+      // Log chat message
+      console.log('🗨️ [BACKEND] Chat message received:', {
+        socketId: socket.id,
+        userId,
+        roomId: data.roomId,
+        chatMessage: data.message.substring(0, 50), // Log only first 50 chars of message for privacy
+        timestamp: new Date().toISOString()
+      });
+      
+      socketLogger.info({
+        message: 'Chat message received',
+        socketId: socket.id,
+        userId,
+        email,
+        roomId: data.roomId,
+        chatMessage: data.message.substring(0, 50), // Log only first 50 chars of message for privacy
+        timestamp: new Date().toISOString()
+      });
+      
+      // Create message object with consistent ID format
+      const messageObj = {
+        id: `${Date.now()}-${data.userId}`,
+        userId: data.userId,
+        username: data.username,
+        message: data.message,
+        timestamp: data.timestamp || new Date().toISOString(),
+      };
+      
+      // Broadcast the message to all clients in the room except the sender
+      socket.to(data.roomId.toString()).emit(SocketEvents.CHAT_MESSAGE, messageObj);
+      
+      console.log('📤 [BACKEND] Chat message broadcasted to room:', data.roomId);
+    });
 
     // Log all socket events for debugging
     socket.onAny((eventName, ...args) => {

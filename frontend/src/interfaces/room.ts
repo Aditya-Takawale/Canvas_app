@@ -76,6 +76,7 @@ export interface CreateRoomRequest {
   name: string;
   description?: string;
   isPrivate?: boolean;
+  password?: string;
   width?: number;
   height?: number;
 }
@@ -84,10 +85,12 @@ export interface UpdateRoomRequest {
   name?: string;
   description?: string;
   isPrivate?: boolean;
+  password?: string;
 }
 
 export interface JoinRoomRequest {
   joinCode?: string;
+  password?: string;
 }
 
 export interface UpdateCanvasRequest {

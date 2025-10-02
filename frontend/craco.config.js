@@ -62,6 +62,83 @@ module.exports = {
           }
         }
       }
+
+      // Performance optimizations for production
+      if (process.env.NODE_ENV === 'production') {
+        // Configure bundle splitting
+        webpackConfig.optimization = {
+          ...webpackConfig.optimization,
+          splitChunks: {
+            chunks: 'all',
+            cacheGroups: {
+              // Vendor bundle - Third party libraries
+              vendor: {
+                test: /[\\/]node_modules[\\/]/,
+                name: 'vendors',
+                chunks: 'all',
+                priority: 10,
+                enforce: true,
+              },
+              // Fabric.js separate bundle due to large size
+              fabric: {
+                test: /[\\/]node_modules[\\/]fabric[\\/]/,
+                name: 'fabric',
+                chunks: 'all',
+                priority: 15,
+                enforce: true,
+              },
+              // React libraries bundle
+              react: {
+                test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-redux)[\\/]/,
+                name: 'react',
+                chunks: 'all',
+                priority: 12,
+                enforce: true,
+              },
+              // UI libraries bundle
+              ui: {
+                test: /[\\/]node_modules[\\/](react-icons|tailwindcss)[\\/]/,
+                name: 'ui',
+                chunks: 'all',
+                priority: 11,
+                enforce: true,
+              },
+              // Common chunks
+              common: {
+                name: 'common',
+                minChunks: 2,
+                chunks: 'all',
+                priority: 5,
+                reuseExistingChunk: true,
+                enforce: true,
+              },
+            },
+          },
+          // Enable runtime chunk
+          runtimeChunk: {
+            name: 'runtime',
+          },
+          // Tree shaking optimizations
+          usedExports: true,
+          sideEffects: false,
+        };
+
+        // Add compression and minification
+        const CompressionPlugin = require('compression-webpack-plugin');
+        
+        webpackConfig.plugins.push(
+          new CompressionPlugin({
+            algorithm: 'gzip',
+            test: /\.(js|css|html|svg)$/,
+            threshold: 8192,
+            minRatio: 0.8,
+          })
+        );
+
+        // Configure module concatenation for better tree shaking
+        webpackConfig.optimization.concatenateModules = true;
+      }
+
       return webpackConfig;
     },
   },

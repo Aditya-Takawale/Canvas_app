@@ -116,6 +116,8 @@ Canvas_app/
 ### Collaboration
 - Real-time drawing synchronization using Socket.io
 - User presence indicators with colored cursors
+- Dedicated cursor visualization mode for showing all users without switching
+- User attribution for all drawings and objects
 - Room-based collaboration with user lists
 - Real-time chat functionality within rooms
 - Private and public room options

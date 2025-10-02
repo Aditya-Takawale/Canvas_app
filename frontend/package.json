@@ -31,7 +31,8 @@
     "@types/jest": "^29.5.3",
     "@types/node": "^20.4.2",
     "@types/react": "^18.2.15",
-    "@types/react-dom": "^18.2.7"
+    "@types/react-dom": "^18.2.7",
+    "compression-webpack-plugin": "^11.1.0"
   },
   "scripts": {
     "start": "craco start",
@@ -40,7 +41,9 @@
     "eject": "react-scripts eject",
     "lint": "eslint src/**/*.{ts,tsx}",
     "lint:fix": "eslint src/**/*.{ts,tsx} --fix",
-    "format": "prettier --write \"src/**/*.{ts,tsx}\""
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "build:analyze": "node build-and-analyze.js",
+    "analyze": "node analyze-bundle.js"
   },
   "eslintConfig": {
     "extends": [

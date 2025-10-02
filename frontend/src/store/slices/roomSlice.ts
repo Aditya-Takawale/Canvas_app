@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { RoomState, Room } from '../../interfaces/room';
+import { RoomState, Room, CreateRoomRequest, JoinRoomRequest } from '../../interfaces/room';
 import api from '../../services/api';
 
 const initialState: RoomState = {
@@ -85,7 +85,7 @@ export const updateRoom = createAsyncThunk<
 
 export const createRoom = createAsyncThunk<
   RoomResponse,
-  Partial<Room>,
+  CreateRoomRequest,
   { rejectValue: string }
 >(
   'rooms/createRoom',
@@ -95,6 +95,38 @@ export const createRoom = createAsyncThunk<
       return response.data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to create room');
+    }
+  }
+);
+
+export const joinRoom = createAsyncThunk<
+  RoomResponse,
+  { roomId: number; joinData?: JoinRoomRequest },
+  { rejectValue: string }
+>(
+  'rooms/joinRoom',
+  async ({ roomId, joinData }, { rejectWithValue }) => {
+    try {
+      const response = await api.post<RoomResponse>(`/api/rooms/${roomId}/join`, joinData || {});
+      return response.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to join room');
+    }
+  }
+);
+
+export const deleteRoom = createAsyncThunk<
+  { success: boolean; roomId: number },
+  number,
+  { rejectValue: string }
+>(
+  'rooms/deleteRoom',
+  async (roomId, { rejectWithValue }) => {
+    try {
+      await api.delete(`/api/rooms/${roomId}`);
+      return { success: true, roomId };
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to delete room');
     }
   }
 );
@@ -185,6 +217,38 @@ const roomSlice = createSlice({
       state.pagination.totalPages = Math.ceil(state.pagination.totalCount / state.pagination.limit);
     });
     builder.addCase(createRoom.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload as string;
+    });
+
+    // Join room
+    builder.addCase(joinRoom.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(joinRoom.fulfilled, (state, action) => {
+      state.loading = false;
+      state.currentRoom = action.payload.data as Room;
+    });
+    builder.addCase(joinRoom.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload as string;
+    });
+
+    // Delete room
+    builder.addCase(deleteRoom.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(deleteRoom.fulfilled, (state, action) => {
+      state.loading = false;
+      // Remove the deleted room from the rooms array
+      state.rooms = state.rooms.filter(room => room.id !== action.payload.roomId);
+      // Update pagination
+      state.pagination.totalCount -= 1;
+      state.pagination.totalPages = Math.ceil(state.pagination.totalCount / state.pagination.limit);
+    });
+    builder.addCase(deleteRoom.rejected, (state, action) => {
       state.loading = false;
       state.error = action.payload as string;
     });

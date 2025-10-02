@@ -22,6 +22,7 @@ model User {
   // Relations
   rooms     Room[]
   canvases  Canvas[]
+  roomConnections RoomConnection[]
 
   @@map("users")
 }
@@ -31,7 +32,8 @@ model Room {
   name        String
   description String?
   isPrivate   Boolean  @default(false)
-  joinCode    String?
+  joinCode    String?  @unique // Unique room code for joining
+  password    String?   // Password for private rooms (hashed)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
@@ -39,6 +41,7 @@ model Room {
   creatorId   Int
   creator     User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   canvas      Canvas?
+  connections RoomConnection[]
   
   @@map("rooms")
 }
@@ -75,4 +78,21 @@ model DrawingOperation {
   userId    Int
   
   @@map("drawing_operations")
+}
+
+model RoomConnection {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  roomId      Int
+  joinedAt    DateTime @default(now())
+  leftAt      DateTime?
+  isActive    Boolean  @default(true)
+  ipAddress   String?
+  userAgent   String?
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  
+  @@map("room_connections")
 }

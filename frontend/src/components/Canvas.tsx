@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { fabric } from 'fabric';
 import { Socket } from 'socket.io-client';
 import { createCanvasSocket } from '../services/socket';
@@ -50,6 +50,9 @@ const CanvasComponent: React.FC<CanvasProps> = ({
   const dispatch = useAppDispatch();
   const { currentCanvas, activeUsers, operations } = useAppSelector(state => state.canvas);
   const { user } = useAppSelector(state => state.auth);
+  
+  // Stable user reference to prevent useEffect re-runs
+  const userId = useMemo(() => user?.id, [user?.id]);
   
   const [currentTool, setCurrentTool] = useState<DrawingTools>(DrawingTools.PENCIL);
   const [color, setColor] = useState<string>('#000000');
@@ -258,7 +261,7 @@ const CanvasComponent: React.FC<CanvasProps> = ({
         socketRef.current.disconnect();
       }
     };
-  }, [roomId, user, readOnly]);
+  }, [roomId, userId, readOnly]);
   
   // Save canvas state periodically
   useEffect(() => {

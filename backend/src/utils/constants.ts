@@ -14,6 +14,9 @@ export enum SocketEvents {
   // User interaction events
   CURSOR_MOVE = 'cursor_move',
   
+  // Chat events
+  CHAT_MESSAGE = 'chat:message',
+  
   // System events
   ERROR = 'error',
 }

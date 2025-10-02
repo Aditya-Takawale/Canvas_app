@@ -121,12 +121,10 @@ if (-not $frontendStarted) {
     Write-Host "❌ Frontend server failed to start" -ForegroundColor Red
 }
 
-# Display final status
-Write-Host ""
-Write-Host "🎉 Canvas App Status:" -ForegroundColor Cyan
-Write-Host "=" * 50 -ForegroundColor Gray
-
-# Backend status
+    # Display final status
+    Write-Host ""
+    Write-Host "🎉 Canvas App Status:" -ForegroundColor Cyan
+    Write-Host ("=" * 50) -ForegroundColor Gray# Backend status
 if (Test-Port 5000) {
     Write-Host "✅ Backend:  http://localhost:5000 (Running)" -ForegroundColor Green
 } else {

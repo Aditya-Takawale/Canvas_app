@@ -174,14 +174,19 @@ const canvasSlice = createSlice({
     builder.addCase(fetchCanvas.pending, (state) => {
       state.loading = true;
       state.error = null;
+      // Clear operations when loading a new canvas to ensure proper room isolation
+      state.operations = [];
+      state.activeUsers = [];
     });
     builder.addCase(fetchCanvas.fulfilled, (state, action) => {
-      console.log('🔥 fetchCanvas.fulfilled called - this might affect operations!', {
-        currentOperations: state.operations.length,
+      console.log('🔥 fetchCanvas.fulfilled called - loading new room canvas!', {
+        roomId: action.payload.data.roomId,
         receivedData: action.payload.data
       });
       state.loading = false;
       state.currentCanvas = action.payload.data;
+      // Clear active users when loading a new room
+      state.activeUsers = [];
     });
     builder.addCase(fetchCanvas.rejected, (state, action) => {
       state.loading = false;
@@ -240,8 +245,12 @@ const canvasSlice = createSlice({
       state.loading = false;
       state.error = action.payload as string;
     });
+    
+    // Room switching is now handled directly by the components
   },
 });
+
+// No switchRoom function - we handle this in components directly
 
 export const { 
   setCurrentCanvas, 

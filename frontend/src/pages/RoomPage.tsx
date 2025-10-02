@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { fetchRoomById } from '../store/slices/roomSlice';
@@ -16,8 +16,11 @@ const RoomPage: React.FC = () => {
   const dispatch = useAppDispatch();
   
   const { currentRoom, loading: roomLoading, error: roomError } = useAppSelector(state => state.room);
-  const { currentCanvas, loading: canvasLoading, error: canvasError } = useAppSelector(state => state.canvas);
+  const { currentCanvas } = useAppSelector(state => state.canvas); // Keep currentCanvas for settings
   const { user, isAuthenticated, loading: authLoading } = useAppSelector(state => state.auth);
+  
+  // Stable user reference to prevent useEffect re-runs
+  const userId = useMemo(() => user?.id, [user?.id]);
   
   const [showChat, setShowChat] = useState<boolean>(true);
   const [showUsers, setShowUsers] = useState<boolean>(true);
@@ -45,17 +48,17 @@ const RoomPage: React.FC = () => {
       id, 
       authChecked, 
       isAuthenticated, 
-      user: !!user 
+      userId: !!userId 
     });
     
-    if (id && authChecked && isAuthenticated && user) {
+    if (id && authChecked && isAuthenticated && userId) {
       console.log('🚀 Dispatching fetchRoomById...');
       dispatch(fetchRoomById(parseInt(id)));
       
       // Canvas component will handle its own state loading
       console.log('✅ Canvas will handle its own state loading');
     }
-  }, [id, authChecked, isAuthenticated, user, dispatch]);
+  }, [id, authChecked, isAuthenticated, userId, dispatch]);
   
   // Check if room exists and user has access
   useEffect(() => {
@@ -81,14 +84,14 @@ const RoomPage: React.FC = () => {
     return <LoadingSpinner />;
   }
   
-  // Show loading state while fetching room data
-  if (roomLoading || canvasLoading) {
+  // Show loading state while fetching room data (but NOT canvas loading)
+  if (roomLoading) {
     return <LoadingSpinner />;
   }
   
-  // Show error state
-  if (roomError || canvasError) {
-    return <ErrorAlert message={roomError || canvasError || 'An error occurred'} />;
+  // Show error state for room errors (canvas manages its own errors)
+  if (roomError) {
+    return <ErrorAlert message={roomError || 'An error occurred'} />;
   }
   
   // If room doesn't exist, navigate back to rooms page
@@ -97,7 +100,7 @@ const RoomPage: React.FC = () => {
   }
   
   // Check if user is the room creator (for editing permissions)
-  const isCreator = user && currentRoom.creatorId === user.id;
+  const isCreator = userId && currentRoom && currentRoom.creatorId === userId;
   
   return (
     <div className="h-screen flex flex-col bg-gray-50">

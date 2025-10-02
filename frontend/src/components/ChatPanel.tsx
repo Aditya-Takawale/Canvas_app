@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { Socket } from 'socket.io-client';
-import { createCanvasSocket } from '../services/socket';
+import { createChatSocket } from '../services/chatSocket';
+import { SocketEvents } from '../utils/constants';
 
 interface ChatMessage {
   id: string;
@@ -19,65 +20,91 @@ interface ChatPanelProps {
 const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector(state => state.auth);
+  
+  // Stable user reference to prevent useEffect re-runs
+  const userId = useMemo(() => user?.id, [user?.id]);
+  const username = useMemo(() => user?.username, [user?.username]);
+  
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState('');
   const [socketConnected, setSocketConnected] = useState(false);
-  const socketRef = useRef<ReturnType<typeof createCanvasSocket> | null>(null);
+  const socketRef = useRef<ReturnType<typeof createChatSocket> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Connect to socket for chat
   useEffect(() => {
-    if (!user) return;
+    if (!userId) {
+      console.log('🗨️ ChatPanel: No user ID found, skipping chat socket connection');
+      return;
+    }
     
     // Get token from localStorage if available
     const token = localStorage.getItem('token');
     
-    if (!token) return;
-    
-    socketRef.current = createCanvasSocket({
-      url: process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
-      roomId,
-      userId: user.id,
-      token,
-      dispatch,
-    });
-    
-    const socket = socketRef.current.socket;
-    
-    if (socket) {
-      socket.on('connect', () => {
-        setSocketConnected(true);
-        
-        // Add system message for connection
-        addSystemMessage('Connected to chat');
-      });
-      
-      socket.on('disconnect', () => {
-        setSocketConnected(false);
-        addSystemMessage('Disconnected from chat');
-      });
-      
-      socket.on('chat:message', (chatMessage: ChatMessage) => {
-        addMessage(chatMessage);
-      });
-      
-      socket.on('user:joined', (userData: { username: string }) => {
-        addSystemMessage(`${userData.username} joined the room`);
-      });
-      
-      socket.on('user:left', (userData: { username: string }) => {
-        addSystemMessage(`${userData.username} left the room`);
-      });
-      
-      socketRef.current.connect();
+    if (!token) {
+      console.log('No token found, skipping chat socket connection');
+      return;
     }
     
+    console.log('�️ Initializing dedicated chat socket connection to room:', roomId);
+    
+    const socketUrl = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
+    console.log('Using socket URL:', socketUrl);
+    
+    socketRef.current = createChatSocket({
+      url: socketUrl,
+      roomId,
+      userId: userId,
+      token,
+      // Event handlers
+      onConnect: () => {
+        console.log('�️ Chat socket connected for room', roomId);
+        setSocketConnected(true);
+        addSystemMessage('Connected to chat');
+      },
+      onDisconnect: (reason) => {
+        console.log('🗨️ Chat socket disconnected', { reason });
+        setSocketConnected(false);
+        addSystemMessage('Disconnected from chat: ' + reason);
+      },
+      onConnectError: (error) => {
+        console.error('�️ Chat socket connection error:', error);
+        setSocketConnected(false);
+        addSystemMessage('Connection error: ' + error.message);
+      },
+      onChatMessage: (chatMessage) => {
+        console.log('�️ Received chat message:', chatMessage);
+        addMessage(chatMessage);
+      },
+      onUserJoined: (userData) => {
+        console.log('�️ User joined room:', userData);
+        addSystemMessage(`${userData.username} joined the room`);
+      },
+      onUserLeft: (userData) => {
+        console.log('�️ User left room:', userData);
+        addSystemMessage(`${userData.username} left the room`);
+      }
+    });
+    
+    // Connect to the socket server
+    socketRef.current.connect();
+    
+    // Setup a reconnection timer to handle cases where socket doesn't connect initially
+    const reconnectTimer = setInterval(() => {
+      if (socketRef.current && !socketRef.current.isConnected()) {
+        console.log('�️ Attempting to reconnect chat socket...');
+        socketRef.current.connect();
+      }
+    }, 5000);
+    
     return () => {
+      clearInterval(reconnectTimer);
       if (socketRef.current) {
+        console.log('�️ Disconnecting chat socket for cleanup');
         socketRef.current.disconnect();
       }
     };
-  }, [roomId, user]);
+  }, [roomId, userId]);  // Use stable userId instead of user object
   
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -108,28 +135,26 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!message.trim() || !socketRef.current || !socketRef.current.socket || !user) {
+    if (!message.trim() || !socketRef.current || !userId || !username) {
       return;
     }
     
+    console.log('🗨️ Sending chat message:', { message: message.trim(), roomId, userId });
+    
+    // Create local chat message object
     const chatMessage = {
-      userId: user.id,
-      username: user.username,
+      id: `local-${Date.now()}`,
+      userId: userId,
+      username: username,
       message: message.trim(),
       timestamp: new Date().toISOString(),
     };
     
-    // Emit message to server
-    socketRef.current.socket.emit('chat:message', {
-      roomId,
-      ...chatMessage,
-    });
+    // Send message via socket
+    socketRef.current.sendMessage({ message: message.trim() });
     
-    // Add message locally
-    addMessage({
-      id: `local-${Date.now()}`,
-      ...chatMessage,
-    });
+    // Add message to local state immediately
+    addMessage(chatMessage);
     
     // Clear input
     setMessage('');
