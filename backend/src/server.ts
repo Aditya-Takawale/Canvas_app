@@ -121,6 +121,7 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+  logger.info(`Database URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
 });
 
 // Handle unhandled rejections
