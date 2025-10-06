@@ -1,0 +1,38 @@
+services:
+  # Backend API Service
+  - type: web
+    name: canvas-app-backend
+    runtime: node
+    buildCommand: cd backend && npm install && npm run build
+    startCommand: cd backend && npm run start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false  # Set this in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false  # Set this to your frontend URL
+      - key: ENABLE_DEBUG_ROUTES
+        value: false
+
+  # Frontend Static Site
+  - type: static
+    name: canvas-app-frontend
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/build
+    envVars:
+      - key: REACT_APP_API_BASE_URL
+        sync: false  # Set this to your backend URL
+      - key: REACT_APP_SOCKET_URL
+        sync: false  # Set this to your backend URL
+
+databases:
+  # Optional: PostgreSQL database
+  - name: canvas-app-db
+    databaseName: canvas_app
+    user: canvas_app_user

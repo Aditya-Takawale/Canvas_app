@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "description": "Real-Time Collaborative Canvas Drawing Application",
   "scripts": {
-    "start": "powershell -ExecutionPolicy Bypass -File run-app.ps1",
+    "start": "cd backend && npm start",
     "start:dev": "powershell -ExecutionPolicy Bypass -File run-app.ps1 -NoWait",
-    "start:backend": "cd backend && npm run build && node dist/server.js",
+    "start:backend": "cd backend && npm start",
     "start:frontend": "cd frontend && npm start",
-    "build": "cd backend && npm run build && cd ../frontend && npm run build",
+    "build": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
+    "postinstall": "cd backend && npm install && cd ../frontend && npm install",
     "dev": "powershell -ExecutionPolicy Bypass -File run-app.ps1",
     "status": "powershell -ExecutionPolicy Bypass -File status.ps1",
     "stop": "powershell -Command \"netstat -ano | findstr ':5000\\|:3000\\|:3001\\|:5555' | ForEach-Object { $parts = $_ -split '\\s+'; if ($parts.Length -gt 4 -and $parts[4] -ne '0') { Stop-Process -Id $parts[4] -Force -ErrorAction SilentlyContinue } }\""
