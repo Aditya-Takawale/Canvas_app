@@ -7,9 +7,24 @@ interface AppConfig {
   isProduction: boolean;
 }
 
+const resolvedApiBase = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+const resolvedSocketUrl = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
+
+// Warn in production if we accidentally fell back to localhost (misconfigured Vercel env vars)
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
+  if (resolvedApiBase.includes('localhost')) {
+    // eslint-disable-next-line no-console
+    console.warn('[Env Warning] Using localhost backend URL in production build. Set REACT_APP_BACKEND_URL before building.');
+  }
+  if (resolvedSocketUrl.includes('localhost')) {
+    // eslint-disable-next-line no-console
+    console.warn('[Env Warning] Using localhost socket URL in production build. Set REACT_APP_SOCKET_URL before building.');
+  }
+}
+
 const config: AppConfig = {
-  apiBaseUrl: process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000',
-  socketUrl: process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
+  apiBaseUrl: resolvedApiBase,
+  socketUrl: resolvedSocketUrl,
   environment: process.env.REACT_APP_ENVIRONMENT || 'development',
   isDevelopment: process.env.NODE_ENV === 'development',
   isProduction: process.env.NODE_ENV === 'production',

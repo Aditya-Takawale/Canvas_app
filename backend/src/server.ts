@@ -26,7 +26,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '25mb';
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001'],
+    origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -39,10 +39,26 @@ configureSocket(io);
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001'],
+  origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
   credentials: true,
 }));
-app.use(helmet());
+
+// Configure Helmet with custom CSP for cross-origin requests
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", 'https://canvas-app-o5tp.vercel.app', 'https://canvasapp-production.up.railway.app', 'wss://canvasapp-production.up.railway.app'],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  }
+}));
 
 // Use morgan for concise request logging to console
 app.use(morgan('dev', { stream }));
