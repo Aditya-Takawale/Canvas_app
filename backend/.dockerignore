@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+logs
+*.md
+src/**/*.test.ts
+coverage
+.git
+.env*
+prisma/dev.db
+prisma/migrations_sqlite_backup_switch

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { login } from '../services/authThunks';
 import ErrorAlert from '../components/common/ErrorAlert';
 import { Spinner } from '../components/common/Spinner';
 import { FaUser, FaLock } from 'react-icons/fa';
+import { offlineLogin, ensureOfflineSeed, isOfflineMode } from '../services/offlineAuth';
 
 const LoginPage: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -13,8 +14,25 @@ const LoginPage: React.FC = () => {
   const { loading, error } = useAppSelector((state) => state.auth);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    ensureOfflineSeed();
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOfflineMode()) {
+      const result = offlineLogin(username, password);
+      if (result) {
+        // Mimic Redux loginSuccess by writing localStorage directly
+        localStorage.setItem('user', JSON.stringify(result.user));
+        localStorage.setItem('token', result.token);
+        navigate('/rooms');
+        return;
+      } else {
+        console.error('Offline login failed');
+        return;
+      }
+    }
     try {
       // @ts-ignore
       const resultAction = await dispatch(login({ email: username, password }));

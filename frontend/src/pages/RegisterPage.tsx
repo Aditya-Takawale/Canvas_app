@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch } from '../hooks/redux';
 import { register } from '../services/authThunks';
 import ErrorAlert from '../components/common/ErrorAlert';
 import { Spinner } from '../components/common/Spinner';
+import { offlineRegister, ensureOfflineSeed, isOfflineMode } from '../services/offlineAuth';
 
 const RegisterPage: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -16,6 +17,8 @@ const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { ensureOfflineSeed(); }, []);
 
   const validatePasswords = (): boolean => {
     if (password !== confirmPassword) {
@@ -32,8 +35,20 @@ const RegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validatePasswords()) {
+    if (!validatePasswords()) { return; }
+    if (isOfflineMode()) {
+      try {
+        setLoading(true);
+        const result = offlineRegister(username, email, password);
+        if (result) {
+          localStorage.setItem('user', JSON.stringify(result.user));
+          localStorage.setItem('token', result.token);
+          navigate('/rooms');
+          return;
+        }
+      } catch (err: any) {
+        setError(err.message || 'Offline registration failed');
+      } finally { setLoading(false); }
       return;
     }
     
