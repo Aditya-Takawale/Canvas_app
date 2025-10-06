@@ -26,7 +26,12 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '25mb';
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
+    origin: process.env.CORS_ORIGIN || [
+      'http://localhost:3000', 
+      'http://localhost:3001', 
+      'https://canvas-app-o5tp.vercel.app',
+      /^https:\/\/.*\.onrender\.com$/
+    ],
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -37,11 +42,26 @@ const io = new Server(server, {
 // Configure Socket.io
 configureSocket(io);
 
-// Middleware
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
+// CORS setup - make sure to handle OPTIONS preflight
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || [
+    'http://localhost:3000', 
+    'http://localhost:3001', 
+    'https://canvas-app-o5tp.vercel.app',
+    /^https:\/\/.*\.onrender\.com$/
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   credentials: true,
-}));
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
+// Apply CORS
+app.use(cors(corsOptions));
+
+// Handle OPTIONS preflight requests explicitly
+app.options('*', cors(corsOptions));
 
 // Configure Helmet with custom CSP for cross-origin requests
 app.use(helmet({
