@@ -8,6 +8,7 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import CursorOverlay from './CursorOverlay';
 import UserSelector from './UserSelector';
 import roomLoadingManager from '../services/roomLoadingManager';
+import { socketUrl } from '../config/environment';
 
 interface MultiUserFigmaCanvasProps {
   roomId: number;
@@ -98,12 +99,13 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    // Get active user color for tool settings
+    // Get active user for info, but PRIORITIZE Redux brush color for consistency
     const activeUser = getActiveUser();
-    const userColor = activeUser?.color || brushColor;
+    // Use Redux brushColor for consistency with CursorsOnly mode
+    const effectiveColor = brushColor;
 
     // Skip if already applying the same tool settings
-    const currentSettings = `${activeTool}-${brushSize}-${userColor}`;
+    const currentSettings = `${activeTool}-${brushSize}-${effectiveColor}`;
     if ((canvas as any)._lastToolSettings === currentSettings) {
       return;
     }
@@ -111,8 +113,9 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     console.log('🛠️ MultiUser: Applying tool settings:', { 
       activeTool, 
       brushSize, 
-      userColor, 
-      user: activeUser?.name 
+      effectiveColor, 
+      user: activeUser?.name,
+      reduxColor: brushColor 
     });
     
     // Store settings to prevent duplicate applications
@@ -126,10 +129,10 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     canvas.hoverCursor = 'move';
     canvas.moveCursor = 'move';
 
-    // Set brush properties once - USE USER COLOR
+    // Set brush properties once - USE REDUX COLOR for consistency
     if (canvas.freeDrawingBrush) {
       canvas.freeDrawingBrush.width = brushSize;
-      canvas.freeDrawingBrush.color = userColor; // Use active user's color
+      canvas.freeDrawingBrush.color = effectiveColor; // Use Redux brush color consistently
     }
 
     // Apply tool-specific settings with minimal operations
@@ -143,7 +146,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
         canvas.isDrawingMode = true;
         canvas.defaultCursor = 'crosshair';
         if (canvas.freeDrawingBrush) {
-          canvas.freeDrawingBrush.color = canvas.backgroundColor as string || '#ffffff';
+          canvas.freeDrawingBrush.color = effectiveColor; // Use consistent color (should be white for eraser)
         }
         break;
 
@@ -193,9 +196,9 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return null;
 
-    // Get active user color
+    // Use Redux brush color for consistency with CursorsOnly mode
     const activeUser = getActiveUser();
-    const userColor = activeUser?.color || brushColor;
+    const effectiveColor = brushColor; // Prioritize Redux state over user color
     
     const width = Math.abs(endPoint.x - startPoint.x);
     const height = Math.abs(endPoint.y - startPoint.y);
@@ -206,7 +209,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       left,
       top,
       fill: 'transparent',
-      stroke: userColor, // Use active user's color
+      stroke: effectiveColor, // Use Redux brush color consistently
       strokeWidth: Math.max(1, brushSize / 5),
       selectable: true,
       evented: true,
@@ -256,14 +259,14 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       case 'arrow':
         // Create arrow using a group of line and triangle
         const arrowLine = new fabric.Line([0, 0, width, 0], {
-          stroke: userColor, // Use active user's color
+          stroke: effectiveColor, // Use Redux brush color consistently
           strokeWidth: Math.max(1, brushSize / 5),
         });
 
         const arrowHead = new fabric.Triangle({
           width: 10,
           height: 10,
-          fill: userColor, // Use active user's color
+          fill: effectiveColor, // Use Redux brush color consistently
           left: width - 5,
           top: -5,
           angle: 90,
@@ -643,9 +646,18 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     }));
 
     // Emit via socket
+    console.log('🔍 MultiUser: Checking socket connection state:', {
+      hasSocket: !!socketRef.current,
+      isConnected: socketRef.current?.isConnected(),
+      activeUser: activeUser.name,
+      isLoadingState: isLoadingStateRef.current
+    });
+    
     if (socketRef.current?.isConnected()) {
       console.log('🚀 MultiUser: Emitting drawing operation for', activeUser.name);
       socketRef.current.emitDrawingOperation(operation);
+    } else {
+      console.log('⚠️ MultiUser: Socket not connected, operation not emitted');
     }
 
     // Auto-save canvas state to database (debounced)
@@ -803,7 +815,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
 
     // Create socket connection
     socketRef.current = createCanvasSocket({
-      url: process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
+      url: socketUrl,
       roomId,
       userId: user.id,
       token,

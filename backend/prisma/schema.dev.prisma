@@ -1,12 +1,13 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Alternative Prisma schema for development (SQLite)
+// Keep this file for local development
+// Use: npx prisma migrate deploy --schema=./prisma/schema.dev.prisma
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 

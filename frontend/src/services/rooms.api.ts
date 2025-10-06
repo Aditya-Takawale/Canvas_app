@@ -11,11 +11,12 @@ import {
   SaveCanvasStateRequest
 } from '../interfaces/room';
 import { RootState } from '../store';
+import { apiBaseUrl } from '../config/environment';
 
 export const roomsApi = createApi({
   reducerPath: 'roomsApi',
   baseQuery: fetchBaseQuery({ 
-    baseUrl: 'http://localhost:5000/api',
+    baseUrl: `${apiBaseUrl}/api`,
     prepareHeaders: (headers, { getState }) => {
       // Get token from auth state
       const state = getState() as RootState;

@@ -1,5 +1,6 @@
 import React from 'react';
-import { useAppSelector } from '../hooks/redux';
+import { useAppSelector, useAppDispatch } from '../hooks/redux';
+import { setBrushColor, setBrushSize } from '../store/slices/canvasSlice';
 
 interface ObjectProperty {
   label: string;
@@ -80,6 +81,7 @@ const PropertyGroup: React.FC<PropertyGroupProps> = ({ title, properties }) => (
  * Shows properties of selected objects similar to Figma's properties panel
  */
 const PropertiesPanel: React.FC = () => {
+  const dispatch = useAppDispatch();
   const activeTool = useAppSelector(state => (state.canvas as any).activeTool) as string;
   const brushSize = useAppSelector(state => (state.canvas as any).brushSize) as number;
   const brushColor = useAppSelector(state => (state.canvas as any).brushColor) as string;
@@ -91,8 +93,18 @@ const PropertiesPanel: React.FC = () => {
     switch (activeTool) {
       case 'pencil':
         return [
-          { label: 'Stroke Width', value: brushSize, type: 'number' },
-          { label: 'Stroke Color', value: brushColor, type: 'color' },
+          { 
+            label: 'Stroke Width', 
+            value: brushSize, 
+            type: 'number',
+            onChange: (value) => dispatch(setBrushSize(value as number))
+          },
+          { 
+            label: 'Stroke Color', 
+            value: brushColor, 
+            type: 'color',
+            onChange: (value) => dispatch(setBrushColor(value as string))
+          },
           { 
             label: 'Line Cap', 
             value: 'round', 
@@ -108,20 +120,46 @@ const PropertiesPanel: React.FC = () => {
         ];
       case 'eraser':
         return [
-          { label: 'Eraser Size', value: brushSize, type: 'number' }
+          { 
+            label: 'Eraser Size', 
+            value: brushSize, 
+            type: 'number',
+            onChange: (value) => dispatch(setBrushSize(value as number))
+          },
+          { 
+            label: 'Eraser Color', 
+            value: brushColor, 
+            type: 'color',
+            onChange: (value) => dispatch(setBrushColor(value as string))
+          }
         ];
       case 'rectangle':
       case 'circle':
         return [
-          { label: 'Fill Color', value: brushColor, type: 'color' },
+          { 
+            label: 'Fill Color', 
+            value: brushColor, 
+            type: 'color',
+            onChange: (value) => dispatch(setBrushColor(value as string))
+          },
           { label: 'Stroke Color', value: '#000000', type: 'color' },
           { label: 'Stroke Width', value: 2, type: 'number' },
           { label: 'Opacity', value: 100, type: 'number' }
         ];
       case 'line':
         return [
-          { label: 'Stroke Color', value: brushColor, type: 'color' },
-          { label: 'Stroke Width', value: brushSize, type: 'number' },
+          { 
+            label: 'Stroke Color', 
+            value: brushColor, 
+            type: 'color',
+            onChange: (value) => dispatch(setBrushColor(value as string))
+          },
+          { 
+            label: 'Stroke Width', 
+            value: brushSize, 
+            type: 'number',
+            onChange: (value) => dispatch(setBrushSize(value as number))
+          },
           { 
             label: 'Line Style', 
             value: 'solid', 
@@ -132,7 +170,12 @@ const PropertiesPanel: React.FC = () => {
       case 'text':
         return [
           { label: 'Font Size', value: 16, type: 'number' },
-          { label: 'Text Color', value: brushColor, type: 'color' },
+          { 
+            label: 'Text Color', 
+            value: brushColor, 
+            type: 'color',
+            onChange: (value) => dispatch(setBrushColor(value as string))
+          },
           { 
             label: 'Font Family', 
             value: 'Arial', 

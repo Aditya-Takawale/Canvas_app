@@ -15,6 +15,8 @@ var SocketEvents;
     SocketEvents["CANVAS_STATE"] = "canvas_state";
     // User interaction events
     SocketEvents["CURSOR_MOVE"] = "cursor_move";
+    // Chat events
+    SocketEvents["CHAT_MESSAGE"] = "chat:message";
     // System events
     SocketEvents["ERROR"] = "error";
 })(SocketEvents || (exports.SocketEvents = SocketEvents = {}));

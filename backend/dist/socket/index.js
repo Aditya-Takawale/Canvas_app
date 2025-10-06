@@ -229,14 +229,42 @@ const configureSocket = (io) => {
         // Handle cursor movement
         socket.on(constants_1.SocketEvents.CURSOR_MOVE, (data) => {
             // We don't log cursor moves as they are extremely high volume
-            // Broadcast the cursor position to all clients in the room except the sender
-            socket.to(data.roomId).emit(constants_1.SocketEvents.CURSOR_MOVE, {
-                x: data.x,
-                y: data.y,
+            // Broadcast the cursor position to all OTHER clients in the room (following best practices)
+            socket.to(data.roomId).emit('updateCursor', {
+                userId,
+                position: { x: data.x, y: data.y }
+            });
+        });
+        // Handle chat messages
+        socket.on(constants_1.SocketEvents.CHAT_MESSAGE, (data) => {
+            // Log chat message
+            console.log('🗨️ [BACKEND] Chat message received:', {
+                socketId: socket.id,
+                userId,
+                roomId: data.roomId,
+                chatMessage: data.message.substring(0, 50), // Log only first 50 chars of message for privacy
+                timestamp: new Date().toISOString()
+            });
+            logger_1.socketLogger.info({
+                message: 'Chat message received',
+                socketId: socket.id,
                 userId,
                 email,
-                socketId: socket.id,
+                roomId: data.roomId,
+                chatMessage: data.message.substring(0, 50), // Log only first 50 chars of message for privacy
+                timestamp: new Date().toISOString()
             });
+            // Create message object with consistent ID format
+            const messageObj = {
+                id: `${Date.now()}-${data.userId}`,
+                userId: data.userId,
+                username: data.username,
+                message: data.message,
+                timestamp: data.timestamp || new Date().toISOString(),
+            };
+            // Broadcast the message to all clients in the room except the sender
+            socket.to(data.roomId.toString()).emit(constants_1.SocketEvents.CHAT_MESSAGE, messageObj);
+            console.log('📤 [BACKEND] Chat message broadcasted to room:', data.roomId);
         });
         // Log all socket events for debugging
         socket.onAny((eventName, ...args) => {
@@ -266,12 +294,15 @@ const configureSocket = (io) => {
             for (const roomId of rooms) {
                 // Skip the default room (which is the socket's ID)
                 if (roomId !== socket.id) {
+                    // Send USER_LEFT event for Redux state management
                     io.to(roomId).emit(constants_1.SocketEvents.USER_LEFT, {
                         userId,
                         email,
                         socketId: socket.id,
                         timestamp: new Date(),
                     });
+                    // Send removeCursor event for cursor cleanup (following best practices)
+                    io.to(roomId).emit('removeCursor', userId);
                     // Log leaving each room
                     logger_1.socketLogger.debug({
                         message: 'User removed from room due to disconnect',

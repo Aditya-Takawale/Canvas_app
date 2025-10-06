@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.leaveRoom = exports.joinRoom = exports.deleteRoom = exports.updateRoom = exports.getRoomById = exports.getAllRooms = exports.createRoom = void 0;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const logger_1 = __importDefault(require("../utils/logger"));
+const bcrypt_1 = __importDefault(require("bcrypt"));
 /**
  * Create a new room
  * @route POST /api/rooms
@@ -20,9 +21,14 @@ const createRoom = async (req, res) => {
             });
             return;
         }
-        const { name, description, isPrivate, width, height } = req.body;
+        const { name, description, isPrivate, password, width, height } = req.body;
         // Generate a random join code if the room is private
         const joinCode = isPrivate ? Math.random().toString(36).substring(2, 10).toUpperCase() : null;
+        // Hash password if provided
+        let hashedPassword = null;
+        if (password && password.trim()) {
+            hashedPassword = await bcrypt_1.default.hash(password, 10);
+        }
         // Create room with associated canvas
         const room = await prisma_1.default.room.create({
             data: {
@@ -30,6 +36,7 @@ const createRoom = async (req, res) => {
                 description,
                 isPrivate: isPrivate || false,
                 joinCode,
+                password: hashedPassword,
                 creatorId: userId,
                 canvas: {
                     create: {
@@ -82,13 +89,11 @@ const getAllRooms = async (req, res) => {
         const filter = {};
         if (name)
             filter.name = { contains: name };
-        // Only show public rooms by default, unless explicitly searching for private ones
+        // Show all rooms (both public and private) but private rooms will have limited info
         if (req.query.isPrivate !== undefined) {
             filter.isPrivate = isPrivate;
         }
-        else {
-            filter.isPrivate = false;
-        }
+        // Note: Removed the default filter that hides private rooms
         // Get rooms with pagination
         const [rooms, totalCount] = await Promise.all([
             prisma_1.default.room.findMany({
@@ -118,10 +123,23 @@ const getAllRooms = async (req, res) => {
         const totalPages = Math.ceil(totalCount / limit);
         const hasNextPage = page < totalPages;
         const hasPrevPage = page > 1;
+        // Filter sensitive information for private rooms that user doesn't own
+        const userId = req.user?.id;
+        const filteredRooms = rooms.map(room => {
+            // If it's a private room and user is not the creator, hide sensitive info
+            if (room.isPrivate && room.creatorId !== userId) {
+                return {
+                    ...room,
+                    joinCode: undefined, // Hide join code
+                    password: undefined, // Hide password (should already be undefined in response)
+                };
+            }
+            return room;
+        });
         res.status(200).json({
             status: 'success',
             message: 'Rooms retrieved successfully',
-            data: rooms,
+            data: filteredRooms,
             pagination: {
                 page,
                 limit,
@@ -168,16 +186,25 @@ const getRoomById = async (req, res) => {
             });
             return;
         }
-        // If the room is private, only the creator can see it
-        // Or if the user has the join code
+        // If the room is private, check access permissions
         if (room.isPrivate && room.creatorId !== req.user?.id) {
-            const joinCode = req.query.joinCode;
-            if (!joinCode || joinCode !== room.joinCode) {
-                res.status(403).json({
-                    status: 'error',
-                    message: 'You do not have access to this private room',
-                });
-                return;
+            // Check if user has previously joined this room
+            const existingConnection = await prisma_1.default.roomConnection.findFirst({
+                where: {
+                    userId: req.user?.id,
+                    roomId: room.id,
+                },
+            });
+            // If no existing connection, check if they provided the join code
+            if (!existingConnection) {
+                const joinCode = req.query.joinCode;
+                if (!joinCode || joinCode !== room.joinCode) {
+                    res.status(403).json({
+                        status: 'error',
+                        message: 'You do not have access to this private room',
+                    });
+                    return;
+                }
             }
         }
         res.status(200).json({
@@ -327,7 +354,7 @@ exports.deleteRoom = deleteRoom;
 const joinRoom = async (req, res) => {
     try {
         const { id } = req.params;
-        const { joinCode } = req.body;
+        const { joinCode, password } = req.body;
         const userId = req.user?.id;
         if (!userId) {
             res.status(401).json({
@@ -348,7 +375,7 @@ const joinRoom = async (req, res) => {
             });
             return;
         }
-        // If the room is private, check the join code
+        // If the room is private, check the join code and password
         if (room.isPrivate && room.creatorId !== userId) {
             if (!joinCode || joinCode !== room.joinCode) {
                 res.status(403).json({
@@ -357,7 +384,35 @@ const joinRoom = async (req, res) => {
                 });
                 return;
             }
+            // Check password if room has one
+            if (room.password) {
+                if (!password) {
+                    res.status(403).json({
+                        status: 'error',
+                        message: 'Password required for this room',
+                    });
+                    return;
+                }
+                const isPasswordValid = await bcrypt_1.default.compare(password, room.password);
+                if (!isPasswordValid) {
+                    res.status(403).json({
+                        status: 'error',
+                        message: 'Incorrect room password',
+                    });
+                    return;
+                }
+            }
         }
+        // Create room connection record for logging
+        await prisma_1.default.roomConnection.create({
+            data: {
+                userId: userId,
+                roomId: room.id,
+                ipAddress: req.ip || 'unknown',
+                userAgent: req.get('User-Agent') || 'unknown',
+                joinedAt: new Date(),
+            },
+        });
         // Successfully joined the room
         res.status(200).json({
             status: 'success',

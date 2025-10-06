@@ -221,13 +221,10 @@ export const configureSocket = (io: Server): void => {
     socket.on(SocketEvents.CURSOR_MOVE, (data: { roomId: string; x: number; y: number }) => {
       // We don't log cursor moves as they are extremely high volume
       
-      // Broadcast the cursor position to all clients in the room except the sender
-      socket.to(data.roomId).emit(SocketEvents.CURSOR_MOVE, {
-        x: data.x,
-        y: data.y,
+      // Broadcast the cursor position to all OTHER clients in the room (following best practices)
+      socket.to(data.roomId).emit('updateCursor', {
         userId,
-        email,
-        socketId: socket.id,
+        position: { x: data.x, y: data.y }
       });
     });
     
@@ -298,12 +295,16 @@ export const configureSocket = (io: Server): void => {
       for (const roomId of rooms) {
         // Skip the default room (which is the socket's ID)
         if (roomId !== socket.id) {
+          // Send USER_LEFT event for Redux state management
           io.to(roomId).emit(SocketEvents.USER_LEFT, {
             userId,
             email,
             socketId: socket.id,
             timestamp: new Date(),
           });
+          
+          // Send removeCursor event for cursor cleanup (following best practices)
+          io.to(roomId).emit('removeCursor', userId);
           
           // Log leaving each room
           socketLogger.debug({

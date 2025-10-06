@@ -1,5 +1,6 @@
 // @ts-ignore
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { apiBaseUrl } from '../config/environment';
 
 interface LoginRequest {
   email: string;
@@ -22,7 +23,7 @@ interface AuthResponse {
 export const authApi = createApi({
   reducerPath: 'authApi',
   baseQuery: fetchBaseQuery({ 
-    baseUrl: 'http://localhost:5000/api',
+    baseUrl: `${apiBaseUrl}/api`,
     prepareHeaders: (headers) => {
       const token = localStorage.getItem('token');
       if (token) {

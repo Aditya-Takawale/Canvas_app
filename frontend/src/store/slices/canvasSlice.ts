@@ -161,6 +161,10 @@ const canvasSlice = createSlice({
     },
     setActiveTool: (state, action: PayloadAction<'select' | 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'text' | 'pan'>) => {
       state.activeTool = action.payload;
+      // Auto-set brush color to white when eraser is selected
+      if (action.payload === 'eraser') {
+        state.brushColor = '#ffffff';
+      }
     },
     setBrushSize: (state, action: PayloadAction<number>) => {
       state.brushSize = action.payload;

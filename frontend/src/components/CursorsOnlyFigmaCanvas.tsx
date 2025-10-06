@@ -4,10 +4,7 @@ import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { addOperation, saveCanvasState, fetchCanvas, clearOperations, fetchCanvasHistory } from '../store/slices/canvasSlice';
 import { createCanvasSocket } from '../services/socket';
 import roomLoadingManager from '../services/roomLoadingManager';
-import { useCursorVisualization } from '../hooks/useCursorVisualization';
-import { useCursorKeyboardShortcuts } from '../hooks/useCursorKeyboardShortcuts';
-import SimpleCursorOverlay from './SimpleCursorOverlay';
-import CursorDisplay from './CursorDisplay';
+import { socketUrl } from '../config/environment';
 
 interface CursorsOnlyFigmaCanvasProps {
   roomId: number;
@@ -60,22 +57,28 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   const brushSize = useAppSelector(state => (state.canvas as any).brushSize || 5) as number;
   const brushColor = useAppSelector(state => (state.canvas as any).brushColor || '#000000') as string;
 
-  // Cursor visualization hook (simplified for just showing cursors, no user switching)
-  const {
-    users,
-    cursorPositions,
-    showCursors,
-    getCurrentUser,
-    updateCurrentUserCursor,
-    toggleShowCursors,
-    cleanup: cleanupCursors
-  } = useCursorVisualization();
+  // Multi-user cursor system - direct implementation following best practices
+  const otherCursorsRef = useRef<Record<string, HTMLElement>>({});
+  const [showCursors, setShowCursors] = useState(true);
 
-  // Keyboard shortcuts for toggling cursor visibility only
-  useCursorKeyboardShortcuts({
-    onToggleCursors: toggleShowCursors,
-    isEnabled: true
-  });
+  // Toggle cursor visibility
+  const toggleShowCursors = useCallback(() => {
+    setShowCursors(prev => {
+      const newValue = !prev;
+      // Update visibility of all cursor elements
+      Object.values(otherCursorsRef.current).forEach(cursor => {
+        cursor.style.display = newValue ? 'block' : 'none';
+      });
+      return newValue;
+    });
+  }, []);
+
+  // Send our cursor position to server (broadcasts to all other clients)
+  const sendCursorPosition = useCallback((x: number, y: number) => {
+    if (socketRef.current?.isConnected()) {
+      socketRef.current.emitCursorPosition({ x, y });
+    }
+  }, []);
 
   // UI state
   const [isCursorDisplayVisible, setIsCursorDisplayVisible] = useState(false);
@@ -86,15 +89,14 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    // Always use the selected brush color from Redux, never user color
-    const currentUser = getCurrentUser();
+    // Always use the selected brush color from Redux
     
     // ALWAYS apply tool settings to ensure consistent behavior
     console.log('🛠️ CursorsOnly: Applying tool settings:', { 
       activeTool, 
       brushSize, 
       brushColor, 
-      user: currentUser?.name 
+      user: user?.username 
     });
     
     // Store settings for reference
@@ -166,7 +168,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
 
     // Single render call at the end
     canvas.requestRenderAll();
-  }, [activeTool, brushSize, brushColor, getCurrentUser]);
+  }, [activeTool, brushSize, brushColor]);
 
   // Apply tool settings when they change
   useEffect(() => {
@@ -231,7 +233,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     if (!canvas) return null;
 
     // Get current user for attribution only
-    const currentUser = getCurrentUser();
+    // Track drawing operation for multi-user sync
     
     // Ensure minimum size to prevent disappearing shapes
     const width = Math.max(5, Math.abs(endPoint.x - startPoint.x));
@@ -361,14 +363,14 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     }
 
     // Add user attribution to shape
-    if (shape && currentUser) {
-      (shape as any).createdBy = currentUser.id;
-      (shape as any).createdByName = currentUser.name;
-      (shape as any).createdByColor = currentUser.color;
+    if (shape && user) {
+      (shape as any).createdBy = user?.id || 0;
+      (shape as any).createdByName = user?.username || 'Unknown';
+      (shape as any).createdByColor = '#007bff';
     }
 
     return shape;
-  }, [brushSize, brushColor, getCurrentUser]);
+  }, [brushSize, brushColor]);
 
   // Optimized mouse event handlers with performance improvements
   const handleMouseDown = useCallback((e: fabric.IEvent<MouseEvent>) => {
@@ -383,12 +385,12 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       const x = e.e.clientX - rect.left;
       const y = e.e.clientY - rect.top;
       // Always pass the container element to ensure cursor element is created/updated
-      updateCurrentUserCursor(x, y, containerRef.current);
+      sendCursorPosition(x, y);
     }
 
     // Get current user
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
+    // Current user from Redux: user
+    if (!user) return;
     
     // ENFORCE the brush color is ALWAYS set correctly from Redux
     if (canvas.freeDrawingBrush) {
@@ -421,9 +423,9 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         });
         
         // Add user attribution
-        (text as any).createdBy = currentUser.id;
-        (text as any).createdByName = currentUser.name;
-        (text as any).createdByColor = currentUser.color;
+        (text as any).createdBy = user?.id || 0;
+        (text as any).createdByName = user?.username || 'Unknown';
+        (text as any).createdByColor = '#007bff';
         
         canvas.add(text);
         canvas.setActiveObject(text);
@@ -449,7 +451,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         panStateRef.current.lastPosY = e.e.clientY;
         break;
     }
-  }, [activeTool, brushSize, getCurrentUser, updateCurrentUserCursor]);
+  }, [activeTool, brushSize, sendCursorPosition]);
 
   const handleMouseMove = useCallback((e: fabric.IEvent<MouseEvent>) => {
     if (!fabricCanvasRef.current) return;
@@ -463,7 +465,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       const x = e.e.clientX - rect.left;
       const y = e.e.clientY - rect.top;
       // Always pass the container element to ensure cursor element is created/updated
-      updateCurrentUserCursor(x, y, containerRef.current);
+      sendCursorPosition(x, y);
     }
 
     if (activeTool === 'pan' && panStateRef.current.isDragging) {
@@ -492,7 +494,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         canvas.requestRenderAll(); // Use requestRenderAll for better performance
       }
     }
-  }, [activeTool, updateCurrentUserCursor, createShape]);
+  }, [activeTool, sendCursorPosition, createShape]);
 
   const handleMouseUp = useCallback((e: fabric.IEvent<MouseEvent>) => {
     if (!fabricCanvasRef.current) return;
@@ -505,7 +507,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       const rect = containerRef.current.getBoundingClientRect();
       const x = e.e.clientX - rect.left;
       const y = e.e.clientY - rect.top;
-      updateCurrentUserCursor(x, y, containerRef.current);
+      sendCursorPosition(x, y);
     }
 
     if (activeTool === 'pan') {
@@ -687,10 +689,10 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       }
 
       // Get current user for attribution
-      const currentUser = getCurrentUser();
-      if (!currentUser) return;
+      // Current user from Redux: user
+      if (!user) return;
 
-      console.log('✏️ CursorsOnly: Path created by', currentUser.name);
+      console.log('✏️ CursorsOnly: Path created by', user?.username || 'Unknown');
       
       // FORCE selected brush color, not user color
       if (e.path) {
@@ -703,9 +705,9 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
           strokeLineJoin: 'round',
           strokeMiterLimit: 10,
         });      // Add user attribution to path
-      (e.path as any).createdBy = currentUser.id;
-      (e.path as any).createdByName = currentUser.name;
-      (e.path as any).createdByColor = currentUser.color;
+      (e.path as any).createdBy = user?.id || 0;
+      (e.path as any).createdByName = user?.username || 'Unknown';
+      (e.path as any).createdByColor = '#007bff';
     }
 
     // Create operation for socket transmission and Redux
@@ -714,9 +716,9 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       objectData: {
         pathData: e.path?.toJSON() || {},
         timestamp: Date.now(),
-        createdBy: currentUser.id,
-        createdByName: currentUser.name,
-        createdByColor: currentUser.color
+        createdBy: user?.id || 0,
+        createdByName: user?.username || 'Unknown',
+        createdByColor: '#007bff'
       },
       action: 'added'
     };
@@ -729,35 +731,35 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       action: 'added',
       createdAt: new Date().toISOString(),
       canvasId: currentCanvas?.id || roomId,
-      userId: parseInt(currentUser.id, 10) || 0 // Use current user ID (converted to number)
+      userId: parseInt(user?.id || 0, 10) || 0 // Use current user ID (converted to number)
     }));
 
     // Emit via socket
     if (socketRef.current?.isConnected()) {
-      console.log('🚀 CursorsOnly: Emitting drawing operation for', currentUser.name);
+      console.log('🚀 CursorsOnly: Emitting drawing operation for', user?.username || 'Unknown');
       socketRef.current.emitDrawingOperation(operation);
     }
 
     // Auto-save canvas state to database (debounced)
     debouncedSave();
-  }, [roomId, dispatch, debouncedSave, getCurrentUser]);
+  }, [roomId, dispatch, debouncedSave]);
 
   const handleObjectAdded = useCallback((e: any) => {
     const canvas = fabricCanvasRef.current;
     if (!canvas || isLoadingStateRef.current) return;
     
     // Get current user for attribution (if not already set)
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
+    // Current user from Redux: user
+    if (!user) return;
     
     const obj = e.target;
     if (obj && !(obj as any).createdBy) {
-      console.log(`➕ CursorsOnly: Object added by ${currentUser.name} (${obj?.type})`);
+      console.log(`➕ CursorsOnly: Object added by ${user?.username || 'Unknown'} (${obj?.type})`);
       
       // Add user attribution if not already present
-      (obj as any).createdBy = currentUser.id;
-      (obj as any).createdByName = currentUser.name;
-      (obj as any).createdByColor = currentUser.color;
+      (obj as any).createdBy = user?.id || 0;
+      (obj as any).createdByName = user?.username || 'Unknown';
+      (obj as any).createdByColor = '#007bff';
       
       // Keep the object's current color (from brushColor) - don't override with user color
       // We still attribute the object to the user, but the color stays as selected
@@ -768,20 +770,20 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     
     // Auto-save after object addition (debounced)
     debouncedSave();
-  }, [debouncedSave, getCurrentUser]);
+  }, [debouncedSave]);
 
   const handleObjectRemoved = useCallback((e: any) => {
     const canvas = fabricCanvasRef.current;
     if (!canvas || isLoadingStateRef.current) return;
     
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
+    // Current user from Redux: user
+    if (!user) return;
     
-    console.log(`🗑️ CursorsOnly: Object removed by ${currentUser.name}`);
+    console.log(`🗑️ CursorsOnly: Object removed by ${user?.username || 'Unknown'}`);
     
     // Auto-save after object removal (debounced)
     debouncedSave();
-  }, [debouncedSave, getCurrentUser]);
+  }, [debouncedSave]);
 
   // Monitor shape modifications to maintain consistency
   useEffect(() => {
@@ -892,12 +894,12 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       isLoadingStateRef.current = false;
       
       // Clean up cursor resources
-      cleanupCursors();
+      // Cursor cleanup handled in effect;
       
       // Dispose canvas
       canvas.dispose();
     };
-  }, [width, height, readOnly, applyToolSettings, handlePathCreated, handleObjectAdded, handleObjectRemoved, handleMouseDown, handleMouseMove, handleMouseUp, cleanupCursors]); // Removed loadCanvasState from dependencies
+  }, [width, height, readOnly, applyToolSettings, handlePathCreated, handleObjectAdded, handleObjectRemoved, handleMouseDown, handleMouseMove, handleMouseUp]); // Removed loadCanvasState from dependencies
 
   // State to manage connection status  
   const [isLoading, setIsLoading] = useState(true);
@@ -906,7 +908,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   const connectionManager = useRef({ 
     isInitializing: false,
     currentRoomId: null as number | null,
-    currentUserId: null as number | null
+    userId: null as number | null
   });
 
   // Single useEffect for entire socket connection lifecycle
@@ -930,7 +932,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     // Check if we're already connected to this room with the same user
     if (connectionManager.current.currentRoomId === roomId && 
         socketRef.current?.isConnected() && 
-        connectionManager.current.currentUserId === userId) {
+        connectionManager.current.userId === userId) {
       console.log(`🔌 CursorsOnly: Already connected to room ${roomId} with user ${userId}`);
       setIsLoading(false);
       return;
@@ -947,7 +949,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
 
     // Create socket (the socket service handles all event listeners internally)
     socketRef.current = createCanvasSocket({
-      url: process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
+      url: socketUrl,
       roomId,
       userId: userId!,
       token,
@@ -957,8 +959,72 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     // Connect and wait for socket to be ready
     socketRef.current.connect();
     
-    // Connect and wait for socket to be ready
-    socketRef.current.connect();
+    // Add cursor event listeners following the best practice pattern
+    const socket = socketRef.current.socket;
+    if (socket) {
+      // Listen for cursor updates from OTHER users
+      socket.on('updateCursor', (data: { userId: number; position: { x: number; y: number } }) => {
+        if (!containerRef.current) return;
+        
+        const { userId: senderUserId, position } = data;
+        const userKey = `user-${senderUserId}`;
+        
+        // Check if we already have a cursor for this user
+        if (!otherCursorsRef.current[userKey]) {
+          // Create a new cursor element for this user
+          const newCursor = document.createElement('div');
+          newCursor.className = 'other-user-cursor';
+          newCursor.style.cssText = `
+            position: absolute;
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+            display: ${showCursors ? 'block' : 'none'};
+          `;
+          
+          // Create cursor icon
+          const icon = document.createElement('div');
+          icon.textContent = '🔴';
+          icon.style.cssText = `
+            font-size: 16px;
+            text-shadow: 0 0 3px #dc3545;
+          `;
+          
+          // Create user label
+          const label = document.createElement('div');
+          label.textContent = `User ${senderUserId}`;
+          label.style.cssText = `
+            background: #dc3545;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-top: 12px;
+            white-space: nowrap;
+          `;
+          
+          newCursor.appendChild(icon);
+          newCursor.appendChild(label);
+          containerRef.current.appendChild(newCursor);
+          otherCursorsRef.current[userKey] = newCursor;
+        }
+        
+        // Update cursor position
+        const cursor = otherCursorsRef.current[userKey];
+        cursor.style.left = `${position.x}px`;
+        cursor.style.top = `${position.y}px`;
+      });
+      
+      // Listen for users who disconnect and remove their cursors
+      socket.on('removeCursor', (userId: number) => {
+        const userKey = `user-${userId}`;
+        if (otherCursorsRef.current[userKey]) {
+          otherCursorsRef.current[userKey].remove();
+          delete otherCursorsRef.current[userKey];
+        }
+      });
+    }
     
     // Wait for socket connection to establish before loading data
     let connectionAttempts = 0;
@@ -972,7 +1038,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         setIsLoading(false);
         connectionManager.current.isInitializing = false;
         connectionManager.current.currentRoomId = roomId;
-        connectionManager.current.currentUserId = userId!;
+        connectionManager.current.userId = userId!;
         
         // Load canvas state after confirmed connection
         loadCanvasState();
@@ -1000,7 +1066,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       }
       connectionManager.current.isInitializing = false;
       connectionManager.current.currentRoomId = null;
-      connectionManager.current.currentUserId = null;
+      connectionManager.current.userId = null;
       // Reset loading state when switching rooms
       setIsCanvasLoading(true);
     };
@@ -1101,6 +1167,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   }, [currentCanvas?.state, handlePathCreated, handleObjectAdded, handleObjectRemoved, applyToolSettings]);
 
   // Handle cursor tracking in the container
+  // Mouse move handler for the container to send our cursor position
   const handleContainerMouseMove = useCallback((e: React.MouseEvent) => {
     if (!containerRef.current) return;
 
@@ -1108,30 +1175,18 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Always pass the container element to ensure cursor stays visible
-    updateCurrentUserCursor(x, y, containerRef.current);
-  }, [updateCurrentUserCursor]);
+    // Send our cursor position to other users via socket
+    sendCursorPosition(x, y);
+  }, [sendCursorPosition]);
   
-  // Set up persistent cursor tracking with interval
+  // Cleanup cursors when component unmounts
   useEffect(() => {
-    // Refresh cursor positions every 2 seconds to ensure they stay visible
-    const cursorRefreshInterval = setInterval(() => {
-      // Get all users that have cursor positions
-      Object.keys(cursorPositions).forEach(userId => {
-        const position = cursorPositions[userId];
-        if (position && containerRef.current) {
-          // Re-apply cursor position to ensure visibility
-          const user = users.find(u => u.id === userId);
-          if (user) {
-            // This will keep the cursor visible even when not moving
-            updateCurrentUserCursor(position.x, position.y, containerRef.current);
-          }
-        }
-      });
-    }, 2000);
-    
-    return () => clearInterval(cursorRefreshInterval);
-  }, [users, cursorPositions, updateCurrentUserCursor]);
+    return () => {
+      // Clean up all cursor elements
+      Object.values(otherCursorsRef.current).forEach(cursor => cursor.remove());
+      otherCursorsRef.current = {};
+    };
+  }, []);
 
   // Component cleanup - cancel loading when unmounting
   useEffect(() => {
@@ -1162,7 +1217,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   };
 
   // Get current user for display
-  const currentUser = getCurrentUser();
+  // Current user from Redux: user
 
   // Show loading state while canvas is initializing
   if (isCanvasLoading) {
@@ -1192,9 +1247,9 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
             onClick={toggleCursorDisplay}
             className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-white shadow-sm border border-gray-300"
           >
-            <span className="text-lg">{currentUser?.cursorIcon}</span>
-            <span className="font-medium" style={{ color: currentUser?.color }}>
-              {currentUser?.name}
+            <span className="text-lg">{user?.cursorIcon}</span>
+            <span className="font-medium" style={{ color: user?.color }}>
+              {user?.name}
             </span>
             <span className="text-xs text-gray-500">
               {isCursorDisplayVisible ? '▼' : '▶'}
@@ -1226,29 +1281,26 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         </div>
       </div>
 
-      {/* Cursor Display Panel (conditionally rendered) */}
-      {isCursorDisplayVisible && (
-        <div className="absolute top-12 left-2 z-50 shadow-xl">
-          <CursorDisplay
-            users={users}
-            showCursors={showCursors}
-            onToggleShowCursors={toggleShowCursors}
-            className="w-64"
-          />
-        </div>
-      )}
+      {/* Cursor Toggle Button */}
+      <button
+        onClick={toggleShowCursors}
+        className={`px-3 py-1 text-sm rounded transition-colors ${
+          showCursors 
+            ? 'bg-blue-600 text-white hover:bg-blue-700' 
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        }`}
+        title={showCursors ? 'Hide cursors' : 'Show cursors'}
+      >
+        👁️ {showCursors ? 'Hide' : 'Show'} Cursors
+      </button>
 
       {/* Canvas Area */}
       <div className="flex-1 relative">
-        <canvas ref={canvasRef} />
-        
-        {/* Simple Cursor Overlay */}
-        <SimpleCursorOverlay
-          users={users}
-          cursorPositions={cursorPositions}
-          showCursors={showCursors}
-          containerRef={containerRef}
-          onCursorMove={(position) => updateCurrentUserCursor(position.x, position.y)}
+        <canvas 
+          ref={canvasRef} 
+          width={width} 
+          height={height}
+          className="w-full h-full"
         />
       </div>
 
@@ -1266,3 +1318,4 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
 };
 
 export default CursorsOnlyFigmaCanvas;
+
