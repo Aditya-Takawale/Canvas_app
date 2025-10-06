@@ -32,17 +32,5 @@
         }
       ]
     }
-  ],
-  "env": {
-    "REACT_APP_BACKEND_URL": "@backend_url",
-    "REACT_APP_SOCKET_URL": "@socket_url",
-    "REACT_APP_ENVIRONMENT": "production"
-  },
-  "build": {
-    "env": {
-      "REACT_APP_BACKEND_URL": "@backend_url",
-      "REACT_APP_SOCKET_URL": "@socket_url",
-      "REACT_APP_ENVIRONMENT": "production"
-    }
-  }
+  ]
 }
