@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,88 +8,78 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  email     String   @unique
-  password  String
-  role      String   @default("user")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  rooms     Room[]
-  canvases  Canvas[]
+  id              Int              @id @default(autoincrement())
+  username        String           @unique
+  email           String           @unique
+  password        String
+  role            String           @default("user")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  canvases        Canvas[]
   roomConnections RoomConnection[]
+  rooms           Room[]
 
   @@map("users")
 }
 
 model Room {
-  id          Int      @id @default(autoincrement())
+  id          Int              @id @default(autoincrement())
   name        String
   description String?
-  isPrivate   Boolean  @default(false)
-  joinCode    String?  @unique // Unique room code for joining
-  password    String?   // Password for private rooms (hashed)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  // Relations
+  isPrivate   Boolean          @default(false)
+  joinCode    String?          @unique
+  password    String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   creatorId   Int
-  creator     User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
   canvas      Canvas?
   connections RoomConnection[]
-  
+  creator     User             @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
   @@map("rooms")
 }
 
 model Canvas {
-  id        Int      @id @default(autoincrement())
-  name      String?
-  width     Int      @default(800)
-  height    Int      @default(600)
-  state     String?    // Stored as JSON string representation of the canvas state
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  // Relations
-  roomId    Int      @unique
-  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  creatorId Int
-  creator   User     @relation(fields: [creatorId], references: [id])
+  id         Int                @id @default(autoincrement())
+  name       String?
+  width      Int                @default(800)
+  height     Int                @default(600)
+  state      String?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  roomId     Int                @unique
+  creatorId  Int
+  creator    User               @relation(fields: [creatorId], references: [id])
+  room       Room               @relation(fields: [roomId], references: [id], onDelete: Cascade)
   operations DrawingOperation[]
-  
+
   @@map("canvases")
 }
 
 model DrawingOperation {
-  id        Int      @id @default(autoincrement())
-  objectType String  // Type of object (path, rect, circle, etc.)
-  objectData String    // Object-specific data stored as JSON string
-  action    String  // add, modify, remove, etc.
-  createdAt DateTime @default(now())
-  
-  // Relations
-  canvasId  Int
-  canvas    Canvas   @relation(fields: [canvasId], references: [id], onDelete: Cascade)
-  userId    Int
-  
+  id         Int      @id @default(autoincrement())
+  objectType String
+  objectData String
+  action     String
+  createdAt  DateTime @default(now())
+  canvasId   Int
+  userId     Int
+  canvas     Canvas   @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+
   @@map("drawing_operations")
 }
 
 model RoomConnection {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  roomId      Int
-  joinedAt    DateTime @default(now())
-  leftAt      DateTime?
-  isActive    Boolean  @default(true)
-  ipAddress   String?
-  userAgent   String?
-  
-  // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  roomId    Int
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+  isActive  Boolean   @default(true)
+  ipAddress String?
+  userAgent String?
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("room_connections")
 }

@@ -60,7 +60,7 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '25mb';
 // Initialize Socket.io
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001'],
+        origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
         methods: ['GET', 'POST'],
         credentials: true,
     },
@@ -69,12 +69,35 @@ const io = new socket_io_1.Server(server, {
 });
 // Configure Socket.io
 (0, index_1.configureSocket)(io);
-// Middleware
-app.use((0, cors_1.default)({
-    origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001'],
+// CORS setup - make sure to handle OPTIONS preflight
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
+};
+// Apply CORS
+app.use((0, cors_1.default)(corsOptions));
+// Handle OPTIONS preflight requests explicitly
+app.options('*', (0, cors_1.default)(corsOptions));
+// Configure Helmet with custom CSP for cross-origin requests
+app.use((0, helmet_1.default)({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            connectSrc: ["'self'", 'https://canvas-app-o5tp.vercel.app', 'https://canvasapp-production.up.railway.app', 'wss://canvasapp-production.up.railway.app'],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", 'data:', 'blob:'],
+            fontSrc: ["'self'", 'data:'],
+            objectSrc: ["'none'"],
+            upgradeInsecureRequests: [],
+        },
+    }
 }));
-app.use((0, helmet_1.default)());
 // Use morgan for concise request logging to console
 app.use((0, morgan_1.default)('dev', { stream: logger_1.stream }));
 // Parse request body (increase limits for large canvas state)
