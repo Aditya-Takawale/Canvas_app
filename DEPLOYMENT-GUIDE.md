@@ -91,6 +91,34 @@ FRONTEND_URL=https://your-vercel-app-name.vercel.app
 
 ## Step 4: Final Configuration
 
+### (Optional) Manual Database Initialization
+If Prisma migrations did not run automatically and your PostgreSQL database is empty, you can create the tables manually:
+
+1. Ensure you have psql installed (or use Railway's dashboard connect feature).
+2. In the repo root (backend folder present), run:
+
+PowerShell (secure password prompt):
+```
+cd backend
+$pw = Read-Host "Postgres Password" -AsSecureString
+./scripts/manual-init-db.ps1 -Password $pw -HostName caboose.proxy.rlwy.net -Port 23072 -Database railway -User postgres
+```
+
+Bash (if using WSL/Git Bash):
+```
+export PGPASSWORD=YOUR_PASSWORD
+psql -h caboose.proxy.rlwy.net -U postgres -p 23072 -d railway -f prisma/init-postgres.sql
+```
+
+The SQL used lives in `backend/prisma/init-postgres.sql` and mirrors your Prisma schema (users, rooms, canvases, drawing_operations, room_connections).
+
+After running, verify:
+```
+psql -h caboose.proxy.rlwy.net -U postgres -p 23072 -d railway -c "\dt"
+```
+
+If tables exist, you can start using the app immediately.
+
 ### 4.1 Update Railway Backend URL
 Update your frontend environment variables with the actual Railway backend URL:
 1. Get your Railway backend URL from the Railway dashboard
