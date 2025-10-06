@@ -1,13 +1,13 @@
 {
   "name": "canvas-app-frontend",
   "version": 2,
-  "buildCommand": "cd frontend && npm run build",
-  "outputDirectory": "frontend/build",
   "framework": "create-react-app",
-  "installCommand": "cd frontend && npm install",
-  "devCommand": "cd frontend && npm start",
   "cleanUrls": true,
   "trailingSlash": false,
+  "buildCommand": "if [ -d frontend ]; then cd frontend; fi && npm run build",
+  "installCommand": "if [ -d frontend ]; then cd frontend; fi && npm install",
+  "devCommand": "if [ -d frontend ]; then cd frontend; fi && npm start",
+  "outputDirectory": "frontend/build",
   "rewrites": [
     {
       "source": "/((?!api/).*)",
@@ -18,18 +18,9 @@
     {
       "source": "/(.*)",
       "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-XSS-Protection",
-          "value": "1; mode=block"
-        }
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" }
       ]
     }
   ]
