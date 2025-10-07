@@ -8,8 +8,6 @@ import { socketUrl } from '../config/environment';
 
 interface CursorsOnlyFigmaCanvasProps {
   roomId: number;
-  width?: number;
-  height?: number;
   readOnly?: boolean;
 }
 
@@ -19,8 +17,6 @@ interface CursorsOnlyFigmaCanvasProps {
  */
 const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({ 
   roomId, 
-  width = 1200, 
-  height = 800, 
   readOnly = false 
 }) => {
   // Canvas refs and state
@@ -29,6 +25,9 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const socketRef = useRef<ReturnType<typeof createCanvasSocket> | null>(null);
   const isInitializedRef = useRef(false);
+  
+  // Responsive canvas dimensions
+  const [canvasDimensions, setCanvasDimensions] = useState({ width: 800, height: 600 });
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isLoadingStateRef = useRef(false);
   const lastRestoredStateRef = useRef<string | null>(null);
@@ -44,26 +43,46 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     lastPosY: 0,
   });
   
+  // Canvas polling state for continuous sync (like rejoin room mechanism)
+  const canvasPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const lastCanvasStateRef = useRef<string>('');
+  
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   
   // Create stable references to prevent unnecessary re-renders
   const userId = useMemo(() => user?.id, [user?.id]);
   const isUserReady = useMemo(() => !!user && !!userId, [user, userId]);
-  const { currentCanvas, operations } = useAppSelector((state) => state.canvas);
+  const { currentCanvas, operations: rawOperations, unauthorized } = useAppSelector((state) => state.canvas as any);
+  // Expose flags globally for non-React polling guards (minimal risk)
+  useEffect(() => {
+    (window as any).__CANVAS_STATE_FLAGS__ = { unauthorized };
+  }, [unauthorized]);
+  const operations = rawOperations || [];
 
   // Tool state from Redux
   const activeTool = useAppSelector(state => (state.canvas as any).activeTool || 'pencil') as string;
   const brushSize = useAppSelector(state => (state.canvas as any).brushSize || 5) as number;
   const brushColor = useAppSelector(state => (state.canvas as any).brushColor || '#000000') as string;
 
+  // Optional external room state (WebRTC) integration safeguards
+  const isInRoom = useMemo(() => {
+    try {
+      const webrtcStateRaw = (window as any).__WEBRTC_ROOM_STATE__;
+      return !!webrtcStateRaw?.isInAudioRoom || !!webrtcStateRaw?.isInVideoRoom;
+    } catch { return false; }
+  }, []);
+
   // Apply operations from Redux to canvas - THIS WAS MISSING!
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
-    if (!canvas || isLoadingStateRef.current || operations.length === 0) return;
+  if (!canvas || isLoadingStateRef.current || !operations || operations.length === 0) return;
+  // Skip applying remote ops if we are unauthorized or not in room (prevents churn)
+  const canvasStateAny: any = (window as any).__CANVAS_STATE_FLAGS__;
+  if (canvasStateAny?.unauthorized) return;
     
     // Get the last operation
-    const lastOperation = operations[operations.length - 1];
+  const lastOperation = operations[operations.length - 1];
     
     // Skip our own operations to prevent feedback loops
     if (lastOperation.userId === user?.id) {
@@ -84,24 +103,33 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         : lastOperation.objectData;
       
       if (lastOperation.action === 'added') {
-        // Create fabric object from the operation data
+        // Create fabric object from the operation data with revision guard
         fabric.util.enlivenObjects([objectData], (enlivenedObjects: fabric.Object[]) => {
           const obj = enlivenedObjects[0];
           if (obj && canvas) {
-            // Temporarily disable event handlers to prevent feedback
+            const revMap: Map<string, number> = (canvas as any)._revisionMap || new Map();
+            if (!(canvas as any)._revisionMap) (canvas as any)._revisionMap = revMap;
+            const cid = (objectData?.data?._cid) || (obj as any).data?._cid;
+            const incomingRev = objectData?.data?._rev || (obj as any).data?._rev || 1;
+            if (cid) {
+              const currentRev = revMap.get(cid) || 0;
+              if (currentRev >= incomingRev) {
+                console.log('⛔ CursorsOnly: Skipping stale operation add', { cid, currentRev, incomingRev });
+                return;
+              }
+              revMap.set(cid, incomingRev);
+              (obj as any)._cid = cid;
+              (obj as any)._revision = incomingRev;
+              (obj as any).__lastPos = { left: obj.left, top: obj.top, angle: (obj as any).angle || 0 };
+              obj.set('data', { ...(obj as any).data, _cid: cid, _rev: incomingRev });
+            }
             isLoadingStateRef.current = true;
-            
             canvas.add(obj);
             canvas.renderAll();
-            
             console.log('✅ CursorsOnly: Applied operation successfully');
-            
-            // Re-enable event handlers after a short delay
-            setTimeout(() => {
-              isLoadingStateRef.current = false;
-            }, 100);
+            setTimeout(() => { isLoadingStateRef.current = false; }, 100);
           }
-        }, '');  // Add empty string for namespace parameter
+        }, '');
       } else if (lastOperation.action === 'removed') {
         // Handle object removal
         const objects = canvas.getObjects();
@@ -121,6 +149,144 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       console.error('❌ CursorsOnly: Error applying operation:', error);
     }
   }, [operations, user?.id]);
+
+  // Add instant drawing listener (like chat) for immediate synchronization
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+    
+    const handleInstantDrawing = (event: any) => {
+      const { drawingData, action, userId: senderUserId } = event.detail;
+      
+      // Skip if it's from current user (compare as strings to handle type mismatches)
+      if (String(senderUserId) === String(user?.id)) {
+        console.log('⚡ Skipping instant drawing from self:', { senderUserId, currentUserId: user?.id });
+        return;
+      }
+      
+      console.log('⚡ CursorsOnly: Applying instant drawing:', {
+        action,
+        senderUserId,
+        currentUserId: user?.id
+      });
+      
+      try {
+        if (action === 'path_created' && drawingData.pathData) {
+          // Create path object directly on canvas (like chat message)
+          fabric.util.enlivenObjects([drawingData.pathData], (enlivenedObjects: fabric.Object[]) => {
+            const pathObj = enlivenedObjects[0];
+            if (pathObj && canvas) {
+              // Temporarily disable event handlers
+              isLoadingStateRef.current = true;
+              
+              // Add user attribution
+              (pathObj as any).createdBy = drawingData.createdBy;
+              (pathObj as any).createdByName = drawingData.createdByName;
+              (pathObj as any).createdByColor = drawingData.createdByColor;
+              
+              canvas.add(pathObj);
+              canvas.renderAll();
+              
+              console.log('⚡ Instant path drawing applied successfully');
+              
+              // Update last canvas state to prevent polling conflicts
+              lastCanvasStateRef.current = JSON.stringify(canvas.toJSON());
+              
+              // Re-enable event handlers
+              setTimeout(() => {
+                isLoadingStateRef.current = false;
+              }, 50);
+            }
+          }, '');
+        } else if (action === 'object_added' && drawingData.objectData) {
+          // Handle other objects (shapes, text, etc.)
+          fabric.util.enlivenObjects([drawingData.objectData], (enlivenedObjects: fabric.Object[]) => {
+            const obj = enlivenedObjects[0];
+            if (obj && canvas) {
+              // Temporarily disable event handlers
+              isLoadingStateRef.current = true;
+              
+              // Add user attribution
+              (obj as any).createdBy = drawingData.createdBy;
+              (obj as any).createdByName = drawingData.createdByName;
+              (obj as any).createdByColor = drawingData.createdByColor;
+              
+              canvas.add(obj);
+              canvas.renderAll();
+              
+              console.log('⚡ Instant object drawing applied successfully:', drawingData.type);
+              
+              // Update last canvas state to prevent polling conflicts
+              lastCanvasStateRef.current = JSON.stringify(canvas.toJSON());
+              
+              // Re-enable event handlers
+              setTimeout(() => {
+                isLoadingStateRef.current = false;
+              }, 50);
+            }
+          }, '');
+        }
+      } catch (error) {
+        console.error('❌ Error applying instant drawing:', error);
+      }
+    };
+    
+    // Listen for instant drawing events
+    window.addEventListener('instantDrawing', handleInstantDrawing);
+    
+    return () => {
+      window.removeEventListener('instantDrawing', handleInstantDrawing);
+    };
+  }, [user?.id]);
+
+  // Canvas state polling mechanism (like rejoin room every 2 seconds)
+  useEffect(() => {
+    if (!roomId || !userId || !fabricCanvasRef.current) return;
+    
+    const startCanvasPolling = () => {
+      // Clear existing polling
+      if (canvasPollingRef.current) {
+        clearInterval(canvasPollingRef.current);
+      }
+      
+      canvasPollingRef.current = setInterval(() => {
+        const canvas = fabricCanvasRef.current;
+        if (!canvas || isLoadingStateRef.current) return;
+        const token = localStorage.getItem('token');
+        if (!token) { return; }
+        // Honor unauthorized flag to backoff
+        const flags: any = (window as any).__CANVAS_STATE_FLAGS__;
+        if (flags?.unauthorized) { return; }
+        if (!isInRoom) { return; }
+        
+        console.log('🔄 Canvas polling: Fetching latest canvas state (like rejoin room)');
+        
+        // Fetch latest operations like when rejoining room
+        dispatch(fetchCanvasHistory({ roomId, limit: 10 }));
+        
+        // Also check if canvas state changed for immediate sync
+        const currentState = JSON.stringify(canvas.toJSON());
+        if (currentState !== lastCanvasStateRef.current) {
+          lastCanvasStateRef.current = currentState;
+          console.log('🔄 Canvas state updated from external source');
+        }
+      }, 2000); // Every 2 seconds like you requested
+      
+      console.log('🔄 Canvas polling started (2 second intervals)');
+    };
+    
+    // Start polling when canvas is ready
+    const startDelay = setTimeout(startCanvasPolling, 1000);
+    
+    return () => {
+      clearTimeout(startDelay);
+      if (canvasPollingRef.current) {
+        clearInterval(canvasPollingRef.current);
+        canvasPollingRef.current = null;
+        console.log('🔄 Canvas polling stopped');
+      }
+    };
+  }, [roomId, userId, dispatch, isInRoom]);
 
   // Multi-user cursor system - direct implementation following best practices
   const otherCursorsRef = useRef<Record<string, HTMLElement>>({});
@@ -501,6 +667,15 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
 
     const canvas = fabricCanvasRef.current;
     const pointer = canvas.getPointer(e.e);
+    
+    // Debug logging to test if mouse events are working
+    console.log('🖱️ CursorsOnly: Mouse down event triggered', {
+      activeTool,
+      isDrawingMode: canvas.isDrawingMode,
+      brushColor,
+      brushSize,
+      user: user?.username
+    });
 
     // Update cursor position for cursor visualization
     if (containerRef.current) {
@@ -725,7 +900,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       const objectCount = canvas.getObjects().length;
       
       // Get canvas state as JSON
-      const canvasState = canvas.toJSON(['hasControls', 'hasBorders', 'selectable', 'evented']);
+  const canvasState = canvas.toJSON(['hasControls', 'hasBorders', 'selectable', 'evented', 'data']);
       console.log(`💾 CursorsOnly: Auto-saving canvas state for room ${roomId}... (${objectCount} objects)`);
       
       // Perform validation checks before saving
@@ -833,9 +1008,17 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
 
       // Get current user for attribution
       // Current user from Redux: user
-      if (!user) return;
+      if (!user) {
+        console.log('❌ CursorsOnly: No user found for path creation');
+        return;
+      }
 
-      console.log('✏️ CursorsOnly: Path created by', user?.username || 'Unknown');
+      console.log('🎨 *** PATH CREATED EVENT TRIGGERED ***', {
+        username: user?.username || 'Unknown',
+        pathExists: !!e.path,
+        roomId,
+        socketConnected: socketRef.current?.isConnected()
+      });
       
       // FORCE selected brush color, not user color
       if (e.path) {
@@ -847,17 +1030,31 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
           strokeLineCap: 'round',
           strokeLineJoin: 'round',
           strokeMiterLimit: 10,
-        });      // Add user attribution to path
-      (e.path as any).createdBy = user?.id || 0;
-      (e.path as any).createdByName = user?.username || 'Unknown';
-      (e.path as any).createdByColor = '#007bff';
-    }
+        });
+        // Stable identity + revision init
+        const revMap: Map<string, number> = (canvas as any)._revisionMap || new Map();
+        if (!(canvas as any)._revisionMap) (canvas as any)._revisionMap = revMap;
+        if (!(e.path as any)._cid) {
+          (e.path as any)._cid = `obj-${Date.now()}-${Math.floor(Math.random()*100000)}`;
+          revMap.set((e.path as any)._cid, 1);
+          (e.path as any)._revision = 1;
+          (e.path as any).__lastPos = { left: e.path.left, top: e.path.top, angle: (e.path as any).angle || 0 };
+        }
+        const cid = (e.path as any)._cid;
+        const rev = revMap.get(cid) || 1;
+        e.path.set('data', { ...(e.path as any).data, _cid: cid, _rev: rev });
+        
+        // Add user attribution to path
+        (e.path as any).createdBy = user?.id || 0;
+        (e.path as any).createdByName = user?.username || 'Unknown';
+        (e.path as any).createdByColor = '#007bff';
+      }
 
     // Create operation for socket transmission and Redux
     const operation = {
       objectType: 'path',
       objectData: {
-        pathData: e.path?.toJSON() || {},
+        pathData: e.path?.toJSON(['data']) || {},
         timestamp: Date.now(),
         createdBy: user?.id || 0,
         createdByName: user?.username || 'Unknown',
@@ -877,10 +1074,34 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       userId: parseInt(user?.id || 0, 10) || 0 // Use current user ID (converted to number)
     }));
 
-    // Emit via socket
+    // Emit via socket - USE INSTANT DRAWING for immediate synchronization (like chat)
     if (socketRef.current?.isConnected()) {
-      console.log('🚀 CursorsOnly: Emitting drawing operation for', user?.username || 'Unknown');
+      console.log('⚡ CursorsOnly: Emitting INSTANT drawing for', user?.username || 'Unknown', {
+        socketConnected: socketRef.current.isConnected(),
+        userId: user?.id,
+        pathExists: !!e.path
+      });
+      
+      // Use instant drawing mechanism like chat for immediate sync
+      socketRef.current.emitInstantDrawing({
+        drawingData: {
+          type: 'path',
+          pathData: e.path?.toJSON(['data']) || {},
+          timestamp: Date.now(),
+          createdBy: user?.id || 0,
+          createdByName: user?.username || 'Unknown',
+          createdByColor: '#007bff'
+        },
+        action: 'path_created'
+      });
+      
+      // Also emit via regular channel for persistence
       socketRef.current.emitDrawingOperation(operation);
+    } else {
+      console.error('❌ Socket not connected for instant drawing emission', {
+        hasSocket: !!socketRef.current,
+        isConnected: socketRef.current?.isConnected()
+      });
     }
 
     // Auto-save canvas state to database (debounced)
@@ -908,6 +1129,38 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       // We still attribute the object to the user, but the color stays as selected
       // No need to change the object's appearance here
 
+      // EMIT INSTANT DRAWING for immediate synchronization (for shapes and objects)
+      if (socketRef.current?.isConnected() && obj?.type !== 'path') {
+        console.log('⚡ CursorsOnly: Emitting INSTANT drawing for object:', obj?.type);
+        // Identity + revision init
+        const canvas = fabricCanvasRef.current;
+        if (canvas) {
+          const revMap: Map<string, number> = (canvas as any)._revisionMap || new Map();
+          if (!(canvas as any)._revisionMap) (canvas as any)._revisionMap = revMap;
+          if (!(obj as any)._cid) {
+            (obj as any)._cid = `obj-${Date.now()}-${Math.floor(Math.random()*100000)}`;
+            revMap.set((obj as any)._cid, 1);
+            (obj as any)._revision = 1;
+            (obj as any).__lastPos = { left: obj.left, top: obj.top, angle: (obj as any).angle || 0 };
+          }
+          const cid = (obj as any)._cid;
+          const rev = revMap.get(cid) || 1;
+          obj.set('data', { ...(obj as any).data, _cid: cid, _rev: rev });
+        }
+        
+        socketRef.current.emitInstantDrawing({
+          drawingData: {
+            type: obj?.type || 'object',
+            objectData: obj?.toJSON(['data']) || {},
+            timestamp: Date.now(),
+            createdBy: user?.id || 0,
+            createdByName: user?.username || 'Unknown',
+            createdByColor: '#007bff'
+          },
+          action: 'object_added'
+        });
+      }
+
       canvas.requestRenderAll();
     }
     
@@ -933,17 +1186,29 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
     
-    // Function to handle shape modifications
+    // Function to handle shape modifications with revision bump
     const handleObjectModified = (e: any) => {
       const obj = e.target;
       if (!obj) return;
-      
+      const revMap: Map<string, number> = (canvas as any)._revisionMap || new Map();
+      if (!(canvas as any)._revisionMap) (canvas as any)._revisionMap = revMap;
+      if (!(obj as any)._cid) {
+        (obj as any)._cid = `obj-${Date.now()}-${Math.floor(Math.random()*100000)}`;
+        revMap.set((obj as any)._cid, 1);
+        (obj as any)._revision = 1;
+      }
+      const cid = (obj as any)._cid;
+      const currentRev = revMap.get(cid) || 1;
+      const nextRev = currentRev + 1;
+      revMap.set(cid, nextRev);
+      (obj as any)._revision = nextRev;
+      (obj as any).__lastPos = { left: obj.left, top: obj.top, angle: (obj as any).angle || 0 };
+      obj.set('data', { ...(obj as any).data, _cid: cid, _rev: nextRev });
+      console.log('🧲 CursorsOnly: object:modified', { cid, nextRev });
       // Make sure the object remains visible
       if (obj.strokeWidth !== undefined && obj.strokeWidth < 1) {
         obj.set('strokeWidth', Math.max(1, brushSize / 5));
       }
-      
-      // Save after modification
       debouncedSave();
     };
     
@@ -955,16 +1220,53 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     };
   }, [debouncedSave, brushSize]);
   
+  // Responsive canvas sizing effect
+  useEffect(() => {
+    const updateCanvasSize = () => {
+      if (containerRef.current) {
+        const container = containerRef.current;
+        const rect = container.getBoundingClientRect();
+        const newWidth = Math.max(400, rect.width - 20); // Min width with padding
+        const newHeight = Math.max(300, rect.height - 20); // Min height with padding
+        
+        setCanvasDimensions({ width: newWidth, height: newHeight });
+        
+        // Update fabric canvas size if it exists
+        if (fabricCanvasRef.current) {
+          fabricCanvasRef.current.setDimensions({ width: newWidth, height: newHeight });
+          fabricCanvasRef.current.renderAll();
+        }
+      }
+    };
+
+    // Initial size calculation
+    updateCanvasSize();
+
+    // Set up resize observer for responsive behavior
+    const resizeObserver = new ResizeObserver(updateCanvasSize);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    // Fallback: window resize listener
+    window.addEventListener('resize', updateCanvasSize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateCanvasSize);
+    };
+  }, []);
+
   // Canvas initialization - ONLY ONCE
   useEffect(() => {
     if (isInitializedRef.current || !canvasRef.current) return;
     
     console.log('🎨 CursorsOnly: Initializing canvas (one-time only)');
     
-    // Create canvas instance with minimal essential settings for faster initialization
+    // Create canvas instance with responsive dimensions
     const canvas = new fabric.Canvas(canvasRef.current, {
-      width,
-      height,
+      width: canvasDimensions.width,
+      height: canvasDimensions.height,
       backgroundColor: '#ffffff',
       isDrawingMode: !readOnly,
       selection: !readOnly,
@@ -986,11 +1288,14 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       canvas.freeDrawingBrush.strokeLineJoin = 'round';
     }
 
-    // Apply initial tool settings
-    applyToolSettings();
+    // Apply initial tool settings only if not already applied (prevent duplicate logs)
+    if (!(canvas as any)._toolSettingsApplied) {
+      applyToolSettings();
+      (canvas as any)._toolSettingsApplied = true;
+    }
 
     // Log canvas operations for debugging (non-intrusive)
-    console.log('🎨 CursorsOnly: Canvas ready with dimensions:', { width, height });
+    console.log('🎨 CursorsOnly: Canvas ready with dimensions:', { width: canvasDimensions.width, height: canvasDimensions.height });
 
     // Create handler for object selection to sync with Redux color
     const handleObjectSelected = (e: any) => {
@@ -1005,17 +1310,20 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       }
     };
 
-    // Attach stable event handlers
-    canvas.on('path:created', handlePathCreated);
-    canvas.on('object:added', handleObjectAdded);
-    canvas.on('object:removed', handleObjectRemoved);
-    canvas.on('selection:created', handleObjectSelected);
-    canvas.on('selection:updated', handleObjectSelected);
-    
-    // Attach mouse event handlers for shape creation and interaction
-    canvas.on('mouse:down', handleMouseDown);
-    canvas.on('mouse:move', handleMouseMove);
-    canvas.on('mouse:up', handleMouseUp);
+    // Attach stable event handlers only once
+    if (!(canvas as any)._handlersAttached) {
+      canvas.on('path:created', handlePathCreated);
+      canvas.on('object:added', handleObjectAdded);
+      canvas.on('object:removed', handleObjectRemoved);
+      canvas.on('selection:created', handleObjectSelected);
+      canvas.on('selection:updated', handleObjectSelected);
+
+      canvas.on('mouse:down', handleMouseDown);
+      canvas.on('mouse:move', handleMouseMove);
+      canvas.on('mouse:up', handleMouseUp);
+
+      (canvas as any)._handlersAttached = true;
+    }
 
     console.log('✅ CursorsOnly: Canvas initialization complete');
     // Note: Canvas loading state will be set to false after data loading completes
@@ -1042,7 +1350,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       // Dispose canvas
       canvas.dispose();
     };
-  }, [width, height, readOnly, applyToolSettings, handlePathCreated, handleObjectAdded, handleObjectRemoved, handleMouseDown, handleMouseMove, handleMouseUp]); // Removed loadCanvasState from dependencies
+  }, [canvasDimensions.width, canvasDimensions.height, readOnly, applyToolSettings, handlePathCreated, handleObjectAdded, handleObjectRemoved, handleMouseDown, handleMouseMove, handleMouseUp]); // Removed loadCanvasState from dependencies
 
   // State to manage connection status  
   const [isLoading, setIsLoading] = useState(true);
@@ -1072,6 +1380,10 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       return;
     }
 
+    console.log('🔍 CursorsOnly: Token available, length:', token.length);
+    console.log('🔍 CursorsOnly: Socket URL:', socketUrl);
+    console.log('🔍 CursorsOnly: Room ID:', roomId, 'User ID:', userId);
+
     // Check if we're already connected to this room with the same user
     if (connectionManager.current.currentRoomId === roomId && 
         socketRef.current?.isConnected() && 
@@ -1100,11 +1412,25 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     });
 
     // Connect and wait for socket to be ready
+    console.log('🔌 CursorsOnly: Attempting socket connection...');
     socketRef.current.connect();
     
     // Add cursor event listeners following the best practice pattern
     const socket = socketRef.current.socket;
     if (socket) {
+      // Add debugging for socket connection events
+      socket.on('connect', () => {
+        console.log('✅ CursorsOnly: Socket connected successfully!', socket.id);
+      });
+      
+      socket.on('connect_error', (error: any) => {
+        console.error('❌ CursorsOnly: Socket connection error:', error);
+      });
+      
+      socket.on('disconnect', (reason: string) => {
+        console.log('🔌 CursorsOnly: Socket disconnected:', reason);
+      });
+      
       // Listen for cursor updates from OTHER users
       socket.on('updateCursor', (data: { userId: number; position: { x: number; y: number } }) => {
         if (!containerRef.current) return;
@@ -1230,6 +1556,31 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     }
 
     console.log('📥 CursorsOnly: Restoring canvas state from database...');
+    // Revision-aware skip: if local has newer revisions than incoming, skip full restore
+    try {
+      const incomingObjects = (currentCanvas.state as any)?.objects || [];
+      const revMap: Map<string, number> = (canvas as any)._revisionMap || new Map();
+      let skip = false;
+      if (revMap.size && Array.isArray(incomingObjects)) {
+        for (const inc of incomingObjects) {
+          const cid = inc?.data?._cid;
+          if (!cid) continue;
+            const incRev = inc?.data?._rev || 0;
+            const localRev = revMap.get(cid) || 0;
+            if (localRev > incRev) {
+              console.log('⛔ CursorsOnly: Skipping restore due to newer local revision', { cid, localRev, incRev });
+              skip = true;
+              break;
+            }
+        }
+      }
+      if (skip) {
+        lastRestoredStateRef.current = stateString; // prevent repeated checks
+        return;
+      }
+    } catch (err) {
+      console.warn('⚠️ CursorsOnly: Revision pre-check failed, proceeding', err);
+    }
     isLoadingStateRef.current = true;
     lastRestoredStateRef.current = stateString;
     
@@ -1249,7 +1600,26 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         
         // Process objects to ensure they have proper visibility
         const objects = canvas.getObjects();
+        const revMap: Map<string, number> = (canvas as any)._revisionMap || new Map();
+        if (!(canvas as any)._revisionMap) (canvas as any)._revisionMap = revMap;
         objects.forEach(obj => {
+          if (!(obj as any)._cid) {
+            if ((obj as any).data?._cid) {
+              (obj as any)._cid = (obj as any).data._cid;
+            } else {
+              (obj as any)._cid = `obj-${Date.now()}-${Math.floor(Math.random()*100000)}`;
+            }
+          }
+          const cid = (obj as any)._cid;
+          const incRev = (obj as any).data?._rev || (obj as any)._revision || 1;
+          const localRev = revMap.get(cid) || 0;
+          const finalRev = Math.max(localRev, incRev);
+          revMap.set(cid, finalRev);
+          (obj as any)._revision = finalRev;
+          if (!(obj as any).__lastPos) {
+            (obj as any).__lastPos = { left: obj.left, top: obj.top, angle: (obj as any).angle || 0 };
+          }
+          obj.set('data', { ...(obj as any).data, _cid: cid, _rev: finalRev });
           // Ensure minimum stroke width for all objects for visibility
           if (obj.strokeWidth !== undefined && obj.strokeWidth < 1) {
             obj.set('strokeWidth', Math.max(2, brushSize / 3));
@@ -1301,7 +1671,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       console.error('❌ CursorsOnly: Failed to restore canvas state:', error);
       
       // Re-enable event handlers even on error
-      canvas.on('path:created', handlePathCreated);
+  canvas.on('path:created', handlePathCreated);
       canvas.on('object:added', handleObjectAdded);
       canvas.on('object:removed', handleObjectRemoved);
       isLoadingStateRef.current = false;
@@ -1378,20 +1748,24 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-full flex flex-col bg-white"
+      className="relative w-full h-full min-h-0 flex flex-col bg-white overflow-hidden"
       onMouseMove={handleContainerMouseMove}
-      style={{ width: '100%', height: '100%' }}
     >
       {/* Toolbar with Current User Info */}
+      {unauthorized && (
+        <div className="w-full bg-red-50 text-red-700 text-xs px-3 py-2 border-b border-red-200 flex items-center gap-2">
+          <span>🚫 You are not authorized to view canvas history for this room. Live edits are local only.</span>
+        </div>
+      )}
       <div className="flex items-center justify-between p-2 border-b border-gray-200 bg-gray-50">
         {/* Left section: Current user info */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-1 sm:space-x-3">
           <button
             onClick={toggleCursorDisplay}
-            className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-white shadow-sm border border-gray-300"
+            className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-3 py-1.5 rounded-md bg-white shadow-sm border border-gray-300 text-xs sm:text-sm"
           >
-            <span className="text-lg">{user?.cursorIcon}</span>
-            <span className="font-medium" style={{ color: user?.color }}>
+            <span className="text-sm sm:text-lg">{user?.cursorIcon}</span>
+            <span className="font-medium hidden sm:inline" style={{ color: user?.color }}>
               {user?.name}
             </span>
             <span className="text-xs text-gray-500">
@@ -1399,20 +1773,20 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
             </span>
           </button>
           
-          <div className="flex items-center px-2 py-1 bg-gray-100 rounded-md text-xs text-gray-600">
+          <div className="hidden sm:flex items-center px-2 py-1 bg-gray-100 rounded-md text-xs text-gray-600">
             <span>Cursor Display</span>
             <span className={`ml-2 w-2 h-2 rounded-full ${showCursors ? 'bg-green-500' : 'bg-red-500'}`}></span>
           </div>
           
-          <div className="flex items-center px-2 py-1 bg-gray-100 rounded-md text-xs text-gray-600">
-            <span>Socket</span>
-            <span className={`ml-2 w-2 h-2 rounded-full ${socketRef.current?.isConnected() ? 'bg-green-500' : 'bg-red-500'}`}></span>
+          <div className="flex items-center px-1 sm:px-2 py-1 bg-gray-100 rounded-md text-xs text-gray-600">
+            <span className="hidden sm:inline">Socket</span>
+            <span className={`sm:ml-2 w-2 h-2 rounded-full ${socketRef.current?.isConnected() ? 'bg-green-500' : 'bg-red-500'}`}></span>
           </div>
         </div>
 
         {/* Right section: Tool info and controls */}
-        <div className="flex items-center space-x-3 text-sm text-gray-600">
-          <div className="px-2 py-1 bg-gray-100 rounded-md">
+        <div className="flex items-center space-x-1 sm:space-x-3 text-xs sm:text-sm text-gray-600">
+          <div className="hidden md:flex px-2 py-1 bg-gray-100 rounded-md">
             Tool: {activeTool}
           </div>
           
@@ -1462,12 +1836,13 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       </button>
 
       {/* Canvas Area */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative canvas-container overflow-hidden">
         <canvas 
           ref={canvasRef} 
-          width={width} 
-          height={height}
-          className="w-full h-full"
+          width={canvasDimensions.width} 
+          height={canvasDimensions.height}
+          className="w-full h-full block"
+          style={{ maxWidth: '100%', maxHeight: '100%' }}
         />
       </div>
 

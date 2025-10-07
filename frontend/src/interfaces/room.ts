@@ -135,4 +135,5 @@ export interface CanvasState {
   activeTool: 'select' | 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'text' | 'pan';
   brushSize: number;
   brushColor: string;
+  unauthorized?: boolean; // added to flag 403 canvas history access
 }

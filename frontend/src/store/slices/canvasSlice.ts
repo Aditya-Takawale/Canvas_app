@@ -16,7 +16,9 @@ const initialState: CanvasState = {
   activeUsers: [],
   activeTool: 'pencil' as 'select' | 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'text' | 'pan',
   brushSize: 5,
-  brushColor: '#000000'
+  brushColor: '#000000',
+  // Enhancement: mark when server denies canvas history (403) to throttle polling/UI noise
+  unauthorized: false
 };
 
 // Define history response type
@@ -58,7 +60,15 @@ export const fetchCanvasHistory = createAsyncThunk<
       });
       return response.data;
     } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to fetch canvas history');
+      const status = err.response?.status;
+      if (status === 403) {
+        console.warn('🚫 Unauthorized (403) fetching canvas history. Room or token access denied.', {
+          roomId,
+          limit,
+          message: err.response?.data?.message
+        });
+      }
+      return rejectWithValue(err.response?.data?.message || `Failed to fetch canvas history${status ? ` (status ${status})` : ''}`);
     }
   }
 );
@@ -210,6 +220,7 @@ const canvasSlice = createSlice({
       });
       state.loading = false;
       state.operations = action.payload.data.operations || [];
+      state.unauthorized = false; // cleared on success
       // Only update canvas state if it exists in the response
       if (action.payload.data.state) {
         if (state.currentCanvas) {
@@ -220,6 +231,9 @@ const canvasSlice = createSlice({
     builder.addCase(fetchCanvasHistory.rejected, (state, action) => {
       state.loading = false;
       state.error = action.payload as string;
+      if ((action.payload as string)?.toLowerCase().includes('403')) {
+        state.unauthorized = true;
+      }
     });
     
     // Save canvas state
