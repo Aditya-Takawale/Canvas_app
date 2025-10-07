@@ -127,27 +127,40 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     switch (activeTool) {
       case 'pencil':
         canvas.isDrawingMode = true;
+        canvas.selection = false;
         canvas.defaultCursor = 'crosshair';
+        canvas.skipTargetFind = true;
+        if (canvas.freeDrawingBrush) {
+          canvas.freeDrawingBrush.color = brushColor;
+          canvas.freeDrawingBrush.width = brushSize;
+        }
         break;
 
       case 'eraser':
         canvas.isDrawingMode = true;
+        canvas.selection = false;
         canvas.defaultCursor = 'crosshair';
+        canvas.skipTargetFind = true;
         if (canvas.freeDrawingBrush) {
           canvas.freeDrawingBrush.color = canvas.backgroundColor as string || '#ffffff';
+          canvas.freeDrawingBrush.width = brushSize;
         }
         break;
 
       case 'select':
+        canvas.isDrawingMode = false;
         canvas.selection = true;
         canvas.skipTargetFind = false;
         break;
 
       case 'pan':
+        canvas.isDrawingMode = false;
+        canvas.selection = false;
         canvas.defaultCursor = 'grab';
         break;
 
       case 'text':
+        canvas.isDrawingMode = false;
         canvas.selection = true;
         canvas.defaultCursor = 'text';
         break;
@@ -159,10 +172,13 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       case 'arrow':
       case 'star':
       case 'polygon':
+        canvas.isDrawingMode = false;
+        canvas.selection = false;
         canvas.defaultCursor = 'crosshair';
         break;
 
       default:
+        canvas.isDrawingMode = false;
         canvas.selection = true;
     }
 
@@ -406,6 +422,26 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
 
     // Handle different tools with minimal processing
     switch (activeTool) {
+      case 'pencil':
+        // For pencil tool, ensure drawing mode is enabled
+        if (!canvas.isDrawingMode) {
+          console.log('🔄 Enabling drawing mode for pencil tool');
+          canvas.isDrawingMode = true;
+          canvas.freeDrawingBrush.color = brushColor;
+          canvas.freeDrawingBrush.width = brushSize;
+        }
+        break;
+
+      case 'eraser':
+        // For eraser tool, ensure drawing mode is enabled with background color
+        if (!canvas.isDrawingMode) {
+          console.log('🔄 Enabling drawing mode for eraser tool');
+          canvas.isDrawingMode = true;
+          canvas.freeDrawingBrush.color = canvas.backgroundColor as string || '#ffffff';
+          canvas.freeDrawingBrush.width = brushSize;
+        }
+        break;
+
       case 'text':
         // Create text object at click position with selected color
         const text = new fabric.IText('Type here...', {
@@ -451,7 +487,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         panStateRef.current.lastPosY = e.e.clientY;
         break;
     }
-  }, [activeTool, brushSize, sendCursorPosition]);
+  }, [activeTool, brushSize, brushColor, sendCursorPosition, user]);
 
   const handleMouseMove = useCallback((e: fabric.IEvent<MouseEvent>) => {
     if (!fabricCanvasRef.current) return;

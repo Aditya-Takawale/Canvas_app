@@ -60,7 +60,12 @@ const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '25mb';
 // Initialize Socket.io
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
+        origin: process.env.CORS_ORIGIN || [
+            'http://localhost:3000',
+            'http://localhost:3001',
+            'https://canvas-app-o5tp.vercel.app',
+            /^https:\/\/.*\.onrender\.com$/
+        ],
         methods: ['GET', 'POST'],
         credentials: true,
     },
@@ -71,7 +76,12 @@ const io = new socket_io_1.Server(server, {
 (0, index_1.configureSocket)(io);
 // CORS setup - make sure to handle OPTIONS preflight
 const corsOptions = {
-    origin: process.env.CORS_ORIGIN || ['http://localhost:3000', 'http://localhost:3001', 'https://canvas-app-o5tp.vercel.app'],
+    origin: process.env.CORS_ORIGIN || [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'https://canvas-app-o5tp.vercel.app',
+        /^https:\/\/.*\.onrender\.com$/
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     credentials: true,
@@ -132,6 +142,7 @@ app.use(errorHandler_1.errorHandler);
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
     logger_1.default.info(`Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
+    logger_1.default.info(`Database URL configured: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
 });
 // Handle unhandled rejections
 process.on('unhandledRejection', (err) => {

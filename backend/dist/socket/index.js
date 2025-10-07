@@ -216,20 +216,20 @@ const configureSocket = (io) => {
                 action: data.action,
                 timestamp: new Date().toISOString()
             });
-            // Use io.to() to broadcast to ALL clients in the room (including sender)
-            // This ensures the drawing persists on the original client's canvas
-            io.to(data.roomId).emit(constants_1.SocketEvents.DRAWING_EVENT, {
+            // Broadcast to OTHER clients in the room (excluding sender)
+            // This prevents feedback loops while ensuring real-time sync
+            socket.to(data.roomId).emit(constants_1.SocketEvents.DRAWING_EVENT, {
                 ...data,
                 userId,
                 email,
                 timestamp: new Date(),
             });
-            console.log('🚀 [BACKEND] Broadcasted drawing data to all clients in room:', data.roomId);
+            console.log('🚀 [BACKEND] Broadcasted drawing data to other clients in room:', data.roomId);
         });
         // Handle cursor movement
         socket.on(constants_1.SocketEvents.CURSOR_MOVE, (data) => {
             // We don't log cursor moves as they are extremely high volume
-            // Broadcast the cursor position to all OTHER clients in the room (following best practices)
+            // Broadcast the cursor position to all OTHER clients in the room (excluding sender)
             socket.to(data.roomId).emit('updateCursor', {
                 userId,
                 position: { x: data.x, y: data.y }

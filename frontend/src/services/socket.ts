@@ -113,13 +113,7 @@ export const createCanvasSocket = ({
         timestamp: new Date().toISOString()
       });
       
-      // Filter out our own operations to prevent feedback loops
-      if (operation.userId === userId) {
-        console.log('⏭️ Skipping own operation to prevent feedback loop');
-        return;
-      }
-      
-      // Only add operations from other users
+      // Process all operations from other users (server only sends operations from other users now)
       dispatch(addOperation({
         id: operation.id || Date.now(),
         objectType: operation.objectType,
