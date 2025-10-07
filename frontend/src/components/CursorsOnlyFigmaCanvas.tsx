@@ -50,12 +50,77 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   // Create stable references to prevent unnecessary re-renders
   const userId = useMemo(() => user?.id, [user?.id]);
   const isUserReady = useMemo(() => !!user && !!userId, [user, userId]);
-  const { currentCanvas } = useAppSelector((state) => state.canvas);
+  const { currentCanvas, operations } = useAppSelector((state) => state.canvas);
 
   // Tool state from Redux
   const activeTool = useAppSelector(state => (state.canvas as any).activeTool || 'pencil') as string;
   const brushSize = useAppSelector(state => (state.canvas as any).brushSize || 5) as number;
   const brushColor = useAppSelector(state => (state.canvas as any).brushColor || '#000000') as string;
+
+  // Apply operations from Redux to canvas - THIS WAS MISSING!
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas || isLoadingStateRef.current || operations.length === 0) return;
+    
+    // Get the last operation
+    const lastOperation = operations[operations.length - 1];
+    
+    // Skip our own operations to prevent feedback loops
+    if (lastOperation.userId === user?.id) {
+      console.log('⏭️ CursorsOnly: Skipping own operation to prevent feedback loop');
+      return;
+    }
+    
+    console.log('🎨 CursorsOnly: Applying received operation:', {
+      action: lastOperation.action,
+      objectType: lastOperation.objectType,
+      userId: lastOperation.userId,
+      fromUser: lastOperation.userId !== user?.id ? 'other' : 'self'
+    });
+    
+    try {
+      const objectData = typeof lastOperation.objectData === 'string' 
+        ? JSON.parse(lastOperation.objectData) 
+        : lastOperation.objectData;
+      
+      if (lastOperation.action === 'added') {
+        // Create fabric object from the operation data
+        fabric.util.enlivenObjects([objectData], (enlivenedObjects: fabric.Object[]) => {
+          const obj = enlivenedObjects[0];
+          if (obj && canvas) {
+            // Temporarily disable event handlers to prevent feedback
+            isLoadingStateRef.current = true;
+            
+            canvas.add(obj);
+            canvas.renderAll();
+            
+            console.log('✅ CursorsOnly: Applied operation successfully');
+            
+            // Re-enable event handlers after a short delay
+            setTimeout(() => {
+              isLoadingStateRef.current = false;
+            }, 100);
+          }
+        }, '');  // Add empty string for namespace parameter
+      } else if (lastOperation.action === 'removed') {
+        // Handle object removal
+        const objects = canvas.getObjects();
+        const objectToRemove = objects.find(obj => 
+          JSON.stringify(obj.toObject()) === JSON.stringify(objectData)
+        );
+        if (objectToRemove) {
+          isLoadingStateRef.current = true;
+          canvas.remove(objectToRemove);
+          canvas.renderAll();
+          setTimeout(() => {
+            isLoadingStateRef.current = false;
+          }, 100);
+        }
+      }
+    } catch (error) {
+      console.error('❌ CursorsOnly: Error applying operation:', error);
+    }
+  }, [operations, user?.id]);
 
   // Multi-user cursor system - direct implementation following best practices
   const otherCursorsRef = useRef<Record<string, HTMLElement>>({});
@@ -79,6 +144,48 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       socketRef.current.emitCursorPosition({ x, y });
     }
   }, []);
+
+  // Auto-refresh feature to sync canvas state periodically
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+  const autoRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const refreshCanvasState = useCallback(async () => {
+    console.log('🔄 CursorsOnly: Auto-refreshing canvas state...');
+    try {
+      // Fetch latest canvas history without clearing existing operations
+      const result = await dispatch(fetchCanvasHistory({ roomId }));
+      console.log('✅ CursorsOnly: Canvas state refreshed');
+    } catch (error) {
+      console.error('❌ CursorsOnly: Auto-refresh failed:', error);
+    }
+  }, [roomId, dispatch]);
+
+  // Auto-refresh toggle effect
+  useEffect(() => {
+    if (autoRefreshEnabled) {
+      console.log('🔄 CursorsOnly: Starting auto-refresh every 5 seconds');
+      autoRefreshIntervalRef.current = setInterval(refreshCanvasState, 5000);
+    } else {
+      console.log('⏹️ CursorsOnly: Stopping auto-refresh');
+      if (autoRefreshIntervalRef.current) {
+        clearInterval(autoRefreshIntervalRef.current);
+        autoRefreshIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (autoRefreshIntervalRef.current) {
+        clearInterval(autoRefreshIntervalRef.current);
+        autoRefreshIntervalRef.current = null;
+      }
+    };
+  }, [autoRefreshEnabled, refreshCanvasState]);
+
+  // Manual refresh function
+  const manualRefresh = useCallback(() => {
+    console.log('🔄 CursorsOnly: Manual refresh triggered');
+    refreshCanvasState();
+  }, [refreshCanvasState]);
 
   // UI state
   const [isCursorDisplayVisible, setIsCursorDisplayVisible] = useState(false);
@@ -1303,11 +1410,35 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
           </div>
         </div>
 
-        {/* Right section: Tool info */}
+        {/* Right section: Tool info and controls */}
         <div className="flex items-center space-x-3 text-sm text-gray-600">
           <div className="px-2 py-1 bg-gray-100 rounded-md">
             Tool: {activeTool}
           </div>
+          
+          {/* Auto-refresh controls */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={manualRefresh}
+              className="px-2 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 text-xs"
+              title="Manually refresh canvas"
+            >
+              🔄 Sync
+            </button>
+            
+            <button
+              onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+              className={`px-2 py-1 rounded-md text-xs transition-colors ${
+                autoRefreshEnabled 
+                  ? 'bg-green-50 text-green-600 hover:bg-green-100' 
+                  : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+              }`}
+              title={autoRefreshEnabled ? 'Disable auto-refresh' : 'Enable auto-refresh (every 5s)'}
+            >
+              {autoRefreshEnabled ? '⏸️ Auto' : '▶️ Auto'}
+            </button>
+          </div>
+          
           <button
             onClick={handleClearCanvas}
             className="px-3 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100"
