@@ -49,6 +49,11 @@
             "date": 1759780075396,
             "name": "logs\\socket\\2025-10-07.log",
             "hash": "e586956f6dac87e7c29642239908d5b77564c3b5318a5916de70e85f54d05651"
+        },
+        {
+            "date": 1759862160648,
+            "name": "logs\\socket\\2025-10-08.log",
+            "hash": "7564091555c5aae89b05658bda13d564e44d81e84dae18be9b0a7b63422660c4"
         }
     ],
     "hashType": "sha256"

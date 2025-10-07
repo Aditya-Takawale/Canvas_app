@@ -3,6 +3,9 @@ import { useAppDispatch, useAppSelector } from '../hooks/redux';
 import { Socket } from 'socket.io-client';
 import { createChatSocket } from '../services/chatSocket';
 import { SocketEvents } from '../utils/constants';
+import { useWebRTCRoom } from '../hooks/useWebRTCRoom';
+import RoomControls from './RoomControls';
+import WebRTCRoomModal from './WebRTCRoomModal';
 
 interface ChatMessage {
   id: string;
@@ -31,7 +34,27 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
   const socketRef = useRef<ReturnType<typeof createChatSocket> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Connect to socket for chat
+  // Initialize WebRTC for voice/video calls  
+  const webRTCSocket = useMemo(() => {
+    // Return the actual socket reference, and update when socket connection changes
+    const socket = socketRef.current?.socket;
+    console.log('🔗 WebRTC socket memo update:', {
+      hasSocket: !!socket,
+      socketId: socket?.id,
+      connected: socket?.connected,
+      socketConnected
+    });
+    return socket || null;
+  }, [roomId, socketConnected]); // Update when room OR socket connection changes
+  
+  const webRTCRoom = useWebRTCRoom(
+    webRTCSocket, 
+    roomId, 
+    userId?.toString() || '',
+    username || ''
+  );
+  
+  // Socket and message handling
   useEffect(() => {
     if (!userId) {
       console.log('🗨️ ChatPanel: No user ID found, skipping chat socket connection');
@@ -58,7 +81,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
       token,
       // Event handlers
       onConnect: () => {
-        console.log('�️ Chat socket connected for room', roomId);
+        console.log('🗨️ Chat socket connected for room', roomId);
         setSocketConnected(true);
         addSystemMessage('Connected to chat');
       },
@@ -169,20 +192,30 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
   return (
     <div className="chat-panel h-full flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow">
       <div className="chat-header border-b border-gray-200 dark:border-gray-700 p-3">
-        <h3 className="text-lg font-medium text-gray-800 dark:text-white">Chat</h3>
-        <div className="flex items-center">
-          <span 
-            className={`w-2 h-2 rounded-full mr-2 ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
-          ></span>
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {socketConnected ? 'Connected' : 'Disconnected'}
-          </span>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-medium text-gray-800 dark:text-white">Chat</h3>
+          <div className="flex items-center space-x-3">
+            {/* Connection Status */}
+            <div className="flex items-center">
+              <span 
+                className={`w-2 h-2 rounded-full mr-2 ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}
+              ></span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {socketConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
       
-      <div className="chat-messages flex-grow overflow-y-auto p-3">
+      {/* WebRTC Room Controls */}
+      <div className="border-b border-gray-200 dark:border-gray-700 p-3">
+        <RoomControls webRTCRoom={webRTCRoom} />
+      </div>
+      
+      <div className="chat-messages flex-grow overflow-y-auto p-2 space-y-2">
         {messages.length === 0 && (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-4">
+          <div className="text-center text-gray-500 dark:text-gray-400 py-4 text-sm">
             No messages yet. Start the conversation!
           </div>
         )}
@@ -190,7 +223,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
         {messages.map((msg) => (
           <div 
             key={msg.id}
-            className={`mb-3 ${
+            className={`${
               msg.isSystem
                 ? 'text-center'
                 : msg.userId === user?.id
@@ -204,7 +237,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
               </div>
             ) : msg.userId === user?.id ? (
               <div className="flex flex-col items-end">
-                <div className="bg-blue-600 text-white py-2 px-3 rounded-lg max-w-xs break-words text-left">
+                <div className="bg-blue-600 text-white py-2 px-3 rounded-lg max-w-full break-words text-left text-sm">
                   {msg.message}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
@@ -214,11 +247,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
             ) : (
               <div className="flex flex-col items-start">
                 <div className="flex items-center mb-1">
-                  <span className="text-sm font-medium text-gray-800 dark:text-white">
+                  <span className="text-xs font-medium text-gray-800 dark:text-white truncate">
                     {msg.username}
                   </span>
                 </div>
-                <div className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white py-2 px-3 rounded-lg max-w-xs break-words">
+                <div className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white py-2 px-3 rounded-lg max-w-full break-words text-sm">
                   {msg.message}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
@@ -231,13 +264,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
         <div ref={messagesEndRef} />
       </div>
       
-      <div className="chat-input border-t border-gray-200 dark:border-gray-700 p-3">
-        <form onSubmit={handleSendMessage} className="flex">
+      <div className="chat-input border-t border-gray-200 dark:border-gray-700 p-2">
+        <form onSubmit={handleSendMessage} className="flex flex-col space-y-2">
           <input
             id="chat-message"
             name="chat-message"
             type="text"
-            className="flex-grow px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type a message..."
@@ -245,13 +278,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ roomId }) => {
           />
           <button
             type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r-md disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             disabled={!socketConnected || !message.trim()}
           >
             Send
           </button>
         </form>
       </div>
+      
+      {/* Call Modal */}
+      <WebRTCRoomModal webRTCRoom={webRTCRoom} />
     </div>
   );
 };

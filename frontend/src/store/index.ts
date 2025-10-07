@@ -35,6 +35,10 @@ export interface CanvasState {
   activeUsers: any[];
   loading: boolean;
   error: string | null;
+  operations?: any[];
+  activeTool?: string;
+  brushSize?: number;
+  brushColor?: string;
 }
 
 // Define a type for the UI state

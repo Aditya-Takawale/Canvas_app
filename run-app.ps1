@@ -57,7 +57,18 @@ Start-Sleep -Seconds 2
 Write-Host "[BUILD] Building backend..." -ForegroundColor Green
 Set-Location "$PSScriptRoot\backend"
 try {
-    $buildOutput = npm run build 2>&1
+    # First, run Prisma fix to ensure DLL permissions are correct
+    Write-Host "[BUILD] Fixing Prisma permissions..." -ForegroundColor Yellow
+    $prismaFix = powershell -ExecutionPolicy Bypass -File scripts/fix-prisma-clean.ps1 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[WARNING] Prisma fix returned non-zero code, trying manual fix..." -ForegroundColor Yellow
+        # Manual Prisma generation as fallback
+        npx prisma generate 2>&1 | Out-Null
+    }
+    
+    # Now build TypeScript
+    Write-Host "[BUILD] Compiling TypeScript..." -ForegroundColor Yellow
+    $buildOutput = npx tsc 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host "[BUILD] Backend built successfully" -ForegroundColor Green
     } else {

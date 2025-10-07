@@ -9,6 +9,7 @@ export enum SocketEvents {
   
   // Drawing events
   DRAWING_EVENT = 'drawing_event',
+  INSTANT_DRAWING = 'INSTANT_DRAWING', // Fast drawing like chat
   CANVAS_CLEARED = 'canvas_cleared',
   CANVAS_STATE = 'canvas_state',
   

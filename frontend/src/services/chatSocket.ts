@@ -127,7 +127,7 @@ export const createChatSocket = (params: ChatSocketParams): ChatSocket => {
   };
   
   return {
-    socket,
+    get socket() { return socket; },
     connect,
     disconnect,
     sendMessage,

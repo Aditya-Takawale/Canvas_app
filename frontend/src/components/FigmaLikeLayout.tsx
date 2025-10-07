@@ -6,8 +6,6 @@ import PropertiesPanel from './PropertiesPanel';
 
 interface FigmaLikeLayoutProps {
   roomId: number;
-  width?: number;
-  height?: number;
   readOnly?: boolean;
   cursorsModeOnly?: boolean;
 }
@@ -20,8 +18,6 @@ interface FigmaLikeLayoutProps {
  */
 const FigmaLikeLayout: React.FC<FigmaLikeLayoutProps> = ({
   roomId,
-  width = 800,
-  height = 600,
   readOnly = false,
   cursorsModeOnly = true // Default to cursor-only mode
 }) => {
@@ -63,33 +59,28 @@ const FigmaLikeLayout: React.FC<FigmaLikeLayoutProps> = ({
       </div>
       
       {/* Main layout */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-auto min-h-0">
         {/* Left Sidebar - Drawing Tools */}
-        <DrawingToolbar />
+        <div className="flex-shrink-0">
+          <DrawingToolbar />
+        </div>
         
-        {/* Main Canvas Area - conditional rendering with stable keys */}
-        <div className="flex-1">
+        {/* Main Canvas Area - takes all available space */}
+        <div className="flex-1 min-w-0 min-h-0">
           {showCursorsOnly ? (
             <CursorsOnlyFigmaCanvas 
               key={`cursors-${roomId}`}
               roomId={roomId}
-              width={width}
-              height={height}
               readOnly={readOnly}
             />
           ) : (
             <MultiUserFigmaCanvas 
               key={`multiuser-${roomId}`}
               roomId={roomId}
-              width={width}
-              height={height}
               readOnly={readOnly}
             />
           )}
         </div>
-        
-        {/* Right Sidebar - Properties Panel */}
-        <PropertiesPanel />
       </div>
     </div>
   );

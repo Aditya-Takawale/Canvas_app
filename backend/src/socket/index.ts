@@ -217,6 +217,28 @@ export const configureSocket = (io: Server): void => {
       console.log('🚀 [BACKEND] Broadcasted drawing data to other clients in room:', data.roomId);
     });
 
+    // Handle instant drawing events (like chat - direct broadcast)
+    socket.on('INSTANT_DRAWING', (data: { roomId: string; drawingData: any; action: string }) => {
+      console.log('⚡ [BACKEND] Instant drawing received:', {
+        roomId: data.roomId,
+        action: data.action,
+        hasDrawingData: !!data.drawingData,
+        userId,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Broadcast immediately to OTHER clients (like chat)
+      socket.to(data.roomId).emit('INSTANT_DRAWING', {
+        drawingData: data.drawingData,
+        action: data.action,
+        userId,
+        email,
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log('⚡ [BACKEND] Instant drawing broadcasted to room:', data.roomId);
+    });
+
     // Handle cursor movement
     socket.on(SocketEvents.CURSOR_MOVE, (data: { roomId: string; x: number; y: number }) => {
       // We don't log cursor moves as they are extremely high volume
@@ -264,6 +286,272 @@ export const configureSocket = (io: Server): void => {
       console.log('📤 [BACKEND] Chat message broadcasted to room:', data.roomId);
     });
 
+    // ================================
+    // WebRTC Signaling Events
+    // ================================
+    
+    // Handle call invitation
+    socket.on('call-invite', (data: { roomId: string | number; targetUserId: string; callType: 'voice' | 'video'; offer: any }) => {
+      try {
+        const { roomId, targetUserId, callType, offer } = data;
+        
+        socketLogger.info({
+          message: `Call invitation sent`,
+          socketId: socket.id,
+          userId,
+          roomId,
+          targetUserId,
+          callType,
+          timestamp: new Date().toISOString()
+        });
+
+        // Find target user's socket in the room
+        const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
+        let targetFound = false;
+        
+        console.log(`🔍 Looking for target user ${targetUserId} in room ${roomId}`);
+        console.log(`📍 Room has ${roomSockets?.size || 0} connected sockets`);
+        
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            console.log(`🔍 Checking socket ${socketId}, user: ${targetSocket?.data.user?.id}`);
+            
+            if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+              console.log(`✅ Found target user ${targetUserId}, sending call invitation`);
+              targetSocket.emit('call-invite', {
+                callerId: userId.toString(),
+                callerName: targetSocket.data.user.username || email,
+                callType,
+                offer,
+              });
+              targetFound = true;
+              break;
+            }
+          }
+        }
+        
+        if (!targetFound) {
+          console.log(`❌ Target user ${targetUserId} not found in room ${roomId}`);
+          socketLogger.warn({
+            message: 'Target user not found for call invitation',
+            socketId: socket.id,
+            userId,
+            targetUserId,
+            roomId,
+            roomSocketCount: roomSockets?.size || 0,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling call invitation',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Handle call acceptance
+    socket.on('call-accept', (data: { roomId: string | number; targetUserId: string }) => {
+      try {
+        const { roomId, targetUserId } = data;
+        
+        socketLogger.info({
+          message: `Call accepted`,
+          socketId: socket.id,
+          userId,
+          roomId,
+          targetUserId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Find target user's socket in the room
+        const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+              targetSocket.emit('call-accept', {
+                accepterId: userId.toString(),
+              });
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling call acceptance',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Handle call rejection
+    socket.on('call-reject', (data: { roomId: string | number; targetUserId: string }) => {
+      try {
+        const { roomId, targetUserId } = data;
+        
+        socketLogger.info({
+          message: `Call rejected`,
+          socketId: socket.id,
+          userId,
+          roomId,
+          targetUserId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Find target user's socket in the room
+        const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+              targetSocket.emit('call-reject');
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling call rejection',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Handle call end
+    socket.on('call-end', (data: { roomId: string | number; targetUserId: string }) => {
+      try {
+        const { roomId, targetUserId } = data;
+        
+        socketLogger.info({
+          message: `Call ended`,
+          socketId: socket.id,
+          userId,
+          roomId,
+          targetUserId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Find target user's socket in the room
+        const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+              targetSocket.emit('call-end');
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling call end',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Handle WebRTC offer
+    socket.on('offer', (data: { roomId: string | number; targetUserId: string; offer: any }) => {
+      try {
+        const { roomId, targetUserId, offer } = data;
+        
+        // Find target user's socket in the room
+        const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+              targetSocket.emit('offer', {
+                callerId: userId.toString(),
+                offer,
+              });
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling WebRTC offer',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Handle WebRTC answer
+    socket.on('answer', (data: { roomId: string | number; targetUserId: string; answer: any }) => {
+      try {
+        const { roomId, targetUserId, answer } = data;
+        
+        // Find target user's socket in the room
+        const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+              targetSocket.emit('answer', {
+                answer,
+              });
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling WebRTC answer',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Handle ICE candidates
+    socket.on('ice-candidate', (data: { roomId: string | number; targetUserId: string; candidate: any }) => {
+      try {
+        const { roomId, targetUserId, candidate } = data;
+        
+        // Find target user's socket in the room
+        const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
+        if (roomSockets) {
+          for (const socketId of roomSockets) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+              targetSocket.emit('ice-candidate', {
+                candidate,
+              });
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling ICE candidate',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
     // Log all socket events for debugging
     socket.onAny((eventName, ...args) => {
       console.log('🎭 [BACKEND] Socket event received:', {
@@ -274,6 +562,236 @@ export const configureSocket = (io: Server): void => {
         firstArg: args[0] ? JSON.stringify(args[0]).substring(0, 200) : 'none',
         timestamp: new Date().toISOString()
       });
+    });
+
+    // WebRTC Room Management
+    socket.on('join-webrtc-room', (data: { roomId: string | number; roomType: 'audio' | 'video'; userId: string; userName: string }) => {
+      try {
+        const { roomId, roomType, userId, userName } = data;
+        const webrtcRoomId = `webrtc-${roomType}-${roomId}`;
+        
+        socketLogger.info({
+          message: `User joining ${roomType} room`,
+          socketId: socket.id,
+          userId,
+          userName,
+          roomId,
+          roomType,
+          timestamp: new Date().toISOString()
+        });
+
+        // Join the WebRTC room
+        socket.join(webrtcRoomId);
+        
+        // Notify other participants in the room
+        socket.to(webrtcRoomId).emit('participant-joined-webrtc', {
+          userId,
+          userName,
+          roomType,
+        });
+
+        // Get current participants and send to new user
+        const roomSockets = io.sockets.adapter.rooms.get(webrtcRoomId);
+        if (roomSockets) {
+          const currentParticipants: any[] = [];
+          for (const socketId of roomSockets) {
+            const participantSocket = io.sockets.sockets.get(socketId);
+            if (participantSocket && participantSocket.id !== socket.id && participantSocket.data.user) {
+              currentParticipants.push({
+                userId: participantSocket.data.user.id.toString(),
+                userName: participantSocket.data.user.username,
+              });
+            }
+          }
+
+          // Send current participants to the new user
+          socket.emit('webrtc-room-participants', {
+            participants: currentParticipants,
+            roomType,
+          });
+        }
+
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error joining WebRTC room',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    socket.on('leave-webrtc-room', (data: { roomId: string | number; userId: string }) => {
+      try {
+        const { roomId, userId } = data;
+        const audioRoomId = `webrtc-audio-${roomId}`;
+        const videoRoomId = `webrtc-video-${roomId}`;
+        
+        socketLogger.info({
+          message: 'User leaving WebRTC room',
+          socketId: socket.id,
+          userId,
+          roomId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Leave both audio and video rooms
+        socket.leave(audioRoomId);
+        socket.leave(videoRoomId);
+        
+        // Notify other participants
+        socket.to(audioRoomId).emit('participant-left-webrtc', {
+          userId,
+          userName: socket.data.user?.username || 'Unknown',
+        });
+        socket.to(videoRoomId).emit('participant-left-webrtc', {
+          userId,
+          userName: socket.data.user?.username || 'Unknown',
+        });
+
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error leaving WebRTC room',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // WebRTC Signaling
+    socket.on('webrtc-offer', (data: { roomId: string | number; offer: any; targetUserId: string }) => {
+      try {
+        const { roomId, offer, targetUserId } = data;
+        
+        socketLogger.info({
+          message: 'WebRTC offer sent',
+          socketId: socket.id,
+          userId,
+          targetUserId,
+          roomId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Find target user's socket in WebRTC rooms
+        const audioRoomId = `webrtc-audio-${roomId}`;
+        const videoRoomId = `webrtc-video-${roomId}`;
+        
+        const audioRoom = io.sockets.adapter.rooms.get(audioRoomId);
+        const videoRoom = io.sockets.adapter.rooms.get(videoRoomId);
+        
+        const allRoomSockets = new Set([
+          ...(audioRoom || []),
+          ...(videoRoom || [])
+        ]);
+
+        for (const socketId of allRoomSockets) {
+          const targetSocket = io.sockets.sockets.get(socketId);
+          if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+            targetSocket.emit('webrtc-offer', {
+              offer,
+              fromUserId: userId,
+              fromUserName: socket.data.user?.username || 'Unknown',
+            });
+            break;
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling WebRTC offer',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    socket.on('webrtc-answer', (data: { roomId: string | number; answer: any; targetUserId: string }) => {
+      try {
+        const { roomId, answer, targetUserId } = data;
+        
+        socketLogger.info({
+          message: 'WebRTC answer sent',
+          socketId: socket.id,
+          userId,
+          targetUserId,
+          roomId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Find target user's socket in WebRTC rooms
+        const audioRoomId = `webrtc-audio-${roomId}`;
+        const videoRoomId = `webrtc-video-${roomId}`;
+        
+        const audioRoom = io.sockets.adapter.rooms.get(audioRoomId);
+        const videoRoom = io.sockets.adapter.rooms.get(videoRoomId);
+        
+        const allRoomSockets = new Set([
+          ...(audioRoom || []),
+          ...(videoRoom || [])
+        ]);
+
+        for (const socketId of allRoomSockets) {
+          const targetSocket = io.sockets.sockets.get(socketId);
+          if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+            targetSocket.emit('webrtc-answer', {
+              answer,
+              fromUserId: userId,
+              fromUserName: socket.data.user?.username || 'Unknown',
+            });
+            break;
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling WebRTC answer',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    socket.on('webrtc-ice-candidate', (data: { roomId: string | number; candidate: any; targetUserId: string }) => {
+      try {
+        const { roomId, candidate, targetUserId } = data;
+        
+        // Find target user's socket in WebRTC rooms
+        const audioRoomId = `webrtc-audio-${roomId}`;
+        const videoRoomId = `webrtc-video-${roomId}`;
+        
+        const audioRoom = io.sockets.adapter.rooms.get(audioRoomId);
+        const videoRoom = io.sockets.adapter.rooms.get(videoRoomId);
+        
+        const allRoomSockets = new Set([
+          ...(audioRoom || []),
+          ...(videoRoom || [])
+        ]);
+
+        for (const socketId of allRoomSockets) {
+          const targetSocket = io.sockets.sockets.get(socketId);
+          if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
+            targetSocket.emit('webrtc-ice-candidate', {
+              candidate,
+              fromUserId: userId,
+              fromUserName: socket.data.user?.username || 'Unknown',
+            });
+            break;
+          }
+        }
+      } catch (error) {
+        socketLogger.error({
+          message: 'Error handling WebRTC ICE candidate',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          socketId: socket.id,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
     });
 
     // Handle disconnections

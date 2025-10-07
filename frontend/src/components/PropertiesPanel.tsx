@@ -209,9 +209,9 @@ const PropertiesPanel: React.FC = () => {
   };
 
   return (
-    <div className="bg-white border-l border-gray-200 w-64 p-4 overflow-y-auto">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-800 mb-2">Properties</h2>
+    <div className="bg-white border-l border-gray-200 w-48 lg:w-64 p-2 lg:p-4 overflow-y-auto">
+      <div className="mb-2 lg:mb-4">
+        <h2 className="text-base lg:text-lg font-semibold text-gray-800 mb-1 lg:mb-2">Properties</h2>
       </div>
 
       {/* Tool Properties */}

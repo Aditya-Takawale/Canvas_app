@@ -43,6 +43,7 @@ interface CanvasSocket {
   emitCursorPosition: (position: { x: number; y: number }) => void;
   isConnected: () => boolean;
   emitChatMessage?: (data: { message: string; roomId: number; userId: number; username: string; timestamp: string }) => void;
+  emitInstantDrawing: (data: { drawingData: any; action: string }) => void;
 }
 
 export const createCanvasSocket = ({
@@ -125,6 +126,29 @@ export const createCanvasSocket = ({
       }));
       
       console.log('Added operation to Redux store:', operation.objectType, operation.action);
+    });
+
+    // Handle instant drawing events (like chat - direct canvas manipulation)
+    socket.on('INSTANT_DRAWING', (data: { drawingData: any; action: string; userId: number; email: string; timestamp: string }) => {
+      console.log('⚡ Received INSTANT_DRAWING from server:', {
+        action: data.action,
+        userId: data.userId,
+        currentUserId: userId,
+        timestamp: data.timestamp
+      });
+      
+      // Trigger custom event for canvas to handle instantly
+      window.dispatchEvent(new CustomEvent('instantDrawing', {
+        detail: {
+          drawingData: data.drawingData,
+          action: data.action,
+          userId: data.userId,
+          email: data.email,
+          timestamp: data.timestamp
+        }
+      }));
+      
+      console.log('⚡ Instant drawing event dispatched to canvas');
     });
 
     socket.on(SocketEvents.CURSOR_MOVE, (data: CursorPositionData) => {
@@ -216,6 +240,24 @@ export const createCanvasSocket = ({
     }
   };
 
+  // Add instant drawing emitter (like chat)
+  const emitInstantDrawing = (data: { drawingData: any; action: string }): void => {
+    if (socket && socket.connected) {
+      console.log('⚡ [FRONTEND] Emitting instant drawing:', data);
+      socket.emit('INSTANT_DRAWING', {
+        roomId,
+        drawingData: data.drawingData,
+        action: data.action
+      });
+      console.log('⚡ [FRONTEND] Instant drawing emitted successfully');
+    } else {
+      console.error('❌ Cannot send instant drawing: Socket not connected', { 
+        hasSocket: !!socket,
+        connected: socket?.connected
+      });
+    }
+  };
+
   return {
     socket,
     connect,
@@ -223,6 +265,7 @@ export const createCanvasSocket = ({
     emitDrawingOperation,
     emitCursorPosition,
     emitChatMessage,
+    emitInstantDrawing, // Add instant drawing like chat
     isConnected
   };
 };

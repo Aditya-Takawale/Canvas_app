@@ -16,7 +16,7 @@ const ToolButton: React.FC<ToolButtonProps> = memo(({ tool, isActive, onClick, i
   <button
     onClick={onClick}
     className={`
-      w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-150
+      w-12 h-12 lg:w-14 lg:h-14 xl:w-16 xl:h-16 flex items-center justify-center rounded-lg transition-all duration-150
       ${isActive 
         ? 'bg-blue-500 text-white shadow-md' 
         : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
@@ -175,9 +175,9 @@ const DrawingToolbar: React.FC = memo(() => {
   ];
 
   return (
-    <div className="bg-white border-r border-gray-200 w-16 flex flex-col items-center py-4 space-y-4" role="toolbar" aria-label="Drawing tools">
+    <div className="bg-white border-r border-gray-200 w-24 lg:w-28 xl:w-32 h-full flex flex-col items-center py-2 space-y-2 overflow-y-auto" role="toolbar" aria-label="Drawing tools">
       {/* Tools Section */}
-      <div className="space-y-2" role="group" aria-label="Drawing tool selection">
+      <div className="space-y-1.5" role="group" aria-label="Drawing tool selection">
         {tools.map(({ tool, icon, label }) => (
           <ToolButton
             key={tool}
@@ -194,7 +194,7 @@ const DrawingToolbar: React.FC = memo(() => {
       <div className="w-8 border-t border-gray-300" />
 
       {/* Brush Size */}
-      <div className="flex flex-col items-center space-y-2">
+      <div className="flex flex-col items-center space-y-1 w-full px-1">
         <label htmlFor="brush-size-slider" className="text-xs text-gray-500 font-medium">Size</label>
         <input
           id="brush-size-slider"
@@ -206,14 +206,14 @@ const DrawingToolbar: React.FC = memo(() => {
           className="w-12 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer transform rotate-90"
           aria-label={`Brush size: ${brushSize} pixels`}
         />
-        <div className="text-xs text-gray-600" aria-hidden="true">{brushSize}</div>
+        <div className="text-xs text-gray-600" aria-hidden="true">{brushSize}px</div>
       </div>
 
       {/* Divider */}
       <div className="w-8 border-t border-gray-300" />
 
       {/* Color Picker */}
-      <div className="flex flex-col items-center space-y-2">
+      <div className="flex flex-col items-center space-y-1.5 w-full px-1">
         <label htmlFor="color-picker-input" className="text-xs text-gray-500 font-medium">Color</label>
         
         {/* Current Color Display */}
@@ -231,18 +231,18 @@ const DrawingToolbar: React.FC = memo(() => {
           type="color"
           value={brushColor}
           onChange={handleColorChange}
-          className="w-8 h-6 border-none cursor-pointer"
+          className="w-10 h-6 border-none cursor-pointer rounded"
           aria-label="Choose brush color"
         />
 
         {/* Color Presets */}
-        <div className="grid grid-cols-2 gap-1 mt-2" role="group" aria-label="Color presets">
+        <div className="grid grid-cols-3 gap-0.5 mt-1 w-full" role="group" aria-label="Color presets">
           {colorPresets.map((color) => (
             <button
               key={color}
               onClick={() => handleColorPresetClick(color)}
               className={`
-                w-3 h-3 rounded border cursor-pointer transition-transform hover:scale-110
+                w-3.5 h-3.5 rounded border cursor-pointer transition-transform hover:scale-110
                 ${brushColor === color ? 'border-blue-500 border-2' : 'border-gray-300'}
               `}
               style={{ backgroundColor: color }}

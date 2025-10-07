@@ -11,6 +11,7 @@ var SocketEvents;
     SocketEvents["USER_COUNT"] = "user_count";
     // Drawing events
     SocketEvents["DRAWING_EVENT"] = "drawing_event";
+    SocketEvents["INSTANT_DRAWING"] = "INSTANT_DRAWING";
     SocketEvents["CANVAS_CLEARED"] = "canvas_cleared";
     SocketEvents["CANVAS_STATE"] = "canvas_state";
     // User interaction events

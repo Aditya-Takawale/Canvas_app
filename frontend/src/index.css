@@ -2,7 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Additional custom styles can go below */
+/* Additional custom styles for responsive layout */
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevent body scroll */
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Ensure canvas containers properly handle sizing */
+.canvas-container {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Responsive font sizing */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 12px;
+  }
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;

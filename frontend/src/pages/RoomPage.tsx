@@ -7,6 +7,7 @@ import FigmaLikeLayout from '../components/FigmaLikeLayout';
 import UserList from '../components/UserList';
 import RoomSettings from '../components/RoomSettings';
 import ChatPanel from '../components/ChatPanel';
+import PropertiesPanel from '../components/PropertiesPanel';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ErrorAlert from '../components/common/ErrorAlert';
 
@@ -25,6 +26,7 @@ const RoomPage: React.FC = () => {
   const [showChat, setShowChat] = useState<boolean>(true);
   const [showUsers, setShowUsers] = useState<boolean>(true);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'properties'>('chat');
   const [authChecked, setAuthChecked] = useState<boolean>(false);
   
   // Wait for auth to be checked before doing anything
@@ -147,32 +149,60 @@ const RoomPage: React.FC = () => {
         </div>
       </div>
       
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Left sidebar - Users */}
         {showUsers && (
-          <div className="w-64 bg-white border-r border-gray-200 flex-shrink-0">
+          <div className="w-48 lg:w-64 bg-white border-r border-gray-200 flex-shrink-0 overflow-y-auto">
             <UserList roomId={parseInt(id || '0')} />
           </div>
         )}
         
-        <div className="flex-1 flex flex-col">
-          {/* Canvas area */}
-          <div className="flex-1">
-            <FigmaLikeLayout 
-              key={`canvas-${id}`}
-              roomId={parseInt(id || '0')} 
-              width={1200}
-              height={800}
-              readOnly={false}
-            />
-          </div>
-          
-          {/* Chat section below canvas */}
-          {showChat && (
-            <div className="h-64 bg-white border-t border-gray-200 flex-shrink-0">
-              <ChatPanel roomId={parseInt(id || '0')} />
-            </div>
-          )}
+        {/* Main canvas area - takes remaining space */}
+        <div className="flex-1 min-w-0 min-h-0">
+          <FigmaLikeLayout 
+            key={`canvas-${id}`}
+            roomId={parseInt(id || '0')} 
+            readOnly={false}
+          />
         </div>
+        
+        {/* Right sidebar - Chat and Properties (vertical with tabs) */}
+        {showChat && (
+          <div className="w-72 xl:w-80 bg-white border-l border-gray-200 flex-shrink-0 flex flex-col">
+            {/* Tab buttons */}
+            <div className="flex border-b border-gray-200">
+              <button
+                className={`flex-1 px-3 py-2 text-sm font-medium ${
+                  rightPanelTab === 'chat' 
+                    ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+                onClick={() => setRightPanelTab('chat')}
+              >
+                💬 Chat
+              </button>
+              <button
+                className={`flex-1 px-3 py-2 text-sm font-medium ${
+                  rightPanelTab === 'properties' 
+                    ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+                onClick={() => setRightPanelTab('properties')}
+              >
+                🎨 Properties
+              </button>
+            </div>
+            
+            {/* Tab content */}
+            <div className="flex-1 min-h-0">
+              {rightPanelTab === 'chat' ? (
+                <ChatPanel roomId={parseInt(id || '0')} />
+              ) : (
+                <PropertiesPanel />
+              )}
+            </div>
+          </div>
+        )}
       </div>
       
       {showSettings && isCreator && (
