@@ -646,6 +646,17 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       }
     }, 5000); // Increased to 5 seconds to reduce save frequency
   }, [roomId, dispatch, currentCanvas]);
+
+  // Immediate flush save (used on unmount / unload)
+  const flushSave = useCallback(() => {
+    if (isLoadingStateRef.current) return;
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+    const canvasState = canvas.toJSON();
+    if (currentCanvas && currentCanvas.roomId === roomId) {
+      dispatch(saveCanvasState({ roomId, state: canvasState }));
+    }
+  }, [roomId, dispatch, currentCanvas]);
   
   // Load canvas state from database using singleton manager
   const loadCanvasState = useCallback(async () => {    
@@ -894,6 +905,8 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     // Cleanup function
     return () => {
       console.log('🧹 MultiUser: Component unmounting, disposing canvas');
+      // Flush pending save synchronously before disposal
+      try { flushSave(); } catch {}
       
       // Cancel any ongoing loading for this room
       roomLoadingManager.cancelRoomLoading(roomId, 'Component unmounting');
@@ -915,6 +928,15 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       canvas.dispose();
     };
   }, []); // CRITICAL: Empty dependencies - only run once
+
+  // Flush on tab/window close
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      try { flushSave(); } catch {}
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [flushSave]);
 
   // Socket connection management with stable useEffect
   useEffect(() => {

@@ -16,12 +16,11 @@ export const generateJwtToken = (user: User): string => {
     // Include username in token so socket layer can access it without extra DB call
     username: user.username,
   };
-
-  return jwt.sign(
-    payload,
-    process.env.JWT_SECRET || 'fallback_secret',
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' } as jwt.SignOptions
-  );
+  const secret = process.env.JWT_SECRET || 'fallback_secret';
+  if (process.env.NODE_ENV === 'production' && secret === 'fallback_secret') {
+    throw new Error('Insecure JWT secret in production');
+  }
+  return jwt.sign(payload, secret, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' } as jwt.SignOptions);
 };
 
 /**
@@ -30,10 +29,11 @@ export const generateJwtToken = (user: User): string => {
  * @returns Decoded JWT payload
  */
 export const verifyJwtToken = (token: string): JwtPayload => {
-  const decoded = jwt.verify(
-    token,
-    process.env.JWT_SECRET || 'fallback_secret'
-  ) as JwtPayload;
+  const secret = process.env.JWT_SECRET || 'fallback_secret';
+  if (process.env.NODE_ENV === 'production' && secret === 'fallback_secret') {
+    throw new Error('Insecure JWT secret in production');
+  }
+  const decoded = jwt.verify(token, secret) as JwtPayload;
   
   return decoded;
 };

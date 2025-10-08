@@ -140,13 +140,15 @@ const canvasSlice = createSlice<typeof initialState, {
       state.currentCanvas = action.payload;
     },
     addOperation: (state, action: PayloadAction<DrawingOperation>) => {
-      console.log('🔴 Redux addOperation called:', { 
-        currentOperations: state.operations.length, 
-        newOperation: action.payload.objectType,
-        action: action.payload.action 
-      });
-      // Use immutable update to ensure React re-renders are triggered
-      state.operations = [...state.operations, action.payload];
+      if (!(state as any)._opBuffer) {
+        (state as any)._opBuffer = [] as DrawingOperation[];
+      }
+      (state as any)._opBuffer.push(action.payload);
+      // Lazy schedule flush flag
+      if (!(state as any)._opFlushScheduled) {
+        (state as any)._opFlushScheduled = true;
+        // NOTE: We cannot call setTimeout directly inside reducer; the actual flush will happen in a middleware-like pattern.
+      }
     },
     clearOperations: (state) => {
       console.log('🔥 Redux clearOperations called - CLEARING ALL OPERATIONS!', new Error().stack);
@@ -306,6 +308,41 @@ export const selectCurrentCanvas = (state: { canvas: CanvasState }) => state.can
 export const selectCanvasOperations = (state: { canvas: CanvasState }) => state.canvas.operations;
 export const selectCanvasLoading = (state: { canvas: CanvasState }) => state.canvas.loading;
 export const selectCanvasError = (state: { canvas: CanvasState }) => state.canvas.error;
+
+// --- Micro-batching for operations (outside reducer purity) ---
+import type { Dispatch } from 'redux';
+
+let __opBuffer: DrawingOperation[] = [];
+let __flushHandle: any = null;
+const OP_FLUSH_INTERVAL = 80; // ms
+
+const flushOps = (dispatch: Dispatch) => {
+  if (!__opBuffer.length) return;
+  const ops = __opBuffer.slice();
+  __opBuffer = [];
+  dispatch({ type: 'canvas/__BATCH_INSERT', payload: ops });
+};
+
+export const dispatchAddOperationBatched = (op: DrawingOperation) => (dispatch: Dispatch) => {
+  __opBuffer.push(op);
+  if (!__flushHandle) {
+    __flushHandle = setTimeout(() => {
+      __flushHandle = null;
+      flushOps(dispatch);
+    }, OP_FLUSH_INTERVAL);
+  }
+};
+
+// Wrap reducer to handle batch insert without polluting main slice definition
+const baseReducer = canvasSlice.reducer;
+// @ts-ignore augment
+canvasSlice.reducer = (state: any, action: any) => {
+  if (action.type === 'canvas/__BATCH_INSERT') {
+    // Immutable append
+    return { ...state, operations: [...state.operations, ...action.payload] };
+  }
+  return baseReducer(state, action);
+};
 export const selectActiveUsers = (state: { canvas: CanvasState }) => state.canvas.activeUsers;
 
 export default canvasSlice.reducer;

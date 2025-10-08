@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
+import validateEnv from './config/validateEnv';
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import { requestLogger } from './middleware/requestLogger';
@@ -13,8 +14,9 @@ import { setupSwagger } from './config/swagger';
 import apiRoutes from './routes';
 import logger, { stream } from './utils/logger';
 
-// Load environment variables
+// Load environment variables then validate required keys
 dotenv.config();
+validateEnv();
 
 // Initialize Express app
 const app = express();

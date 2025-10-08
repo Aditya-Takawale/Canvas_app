@@ -1473,10 +1473,10 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
 
       const handleCursorPayload = (data: any) => {
         if (!containerRef.current) return;
-        // Support both legacy (updateCursor) and canonical (CURSOR_MOVE) payload shapes
+        // Canonical payload shape (cursor_move)
         const senderUserId = data.userId;
         if (String(senderUserId) === String(userId)) return;
-        const pos = data.position || { x: data.x, y: data.y };
+        const pos = { x: data.x, y: data.y };
         if (!pos) return;
         const userKey = `user-${senderUserId}`;
         const labelText = data.username || data.email?.split?.('@')[0] || `User ${senderUserId}`;
@@ -1509,11 +1509,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         cursor.style.top = `${pos.y}px`;
       };
 
-      // Listen for cursor updates from OTHER users (legacy)
-      socket.on('updateCursor', (data: { userId: number; username?: string; position: { x: number; y: number } }) => {
-        handleCursorPayload(data);
-      });
-      // Canonical event
+      // Canonical event only (legacy removed)
       socket.on('CURSOR_MOVE', (data: any) => {
         handleCursorPayload(data);
       });
@@ -1784,6 +1780,26 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     // Auto-save after clearing
     debouncedSave();
   };
+
+  // Flush save helper (reuses debounced context where available)
+  const flushSave = useCallback(() => {
+    if (isLoadingStateRef.current) return;
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+    try {
+      const canvasState = canvas.toJSON();
+      // Save only if we have a valid currentCanvas context
+      if ((currentCanvas as any)?.roomId === roomId) {
+        dispatch(saveCanvasState({ roomId, state: canvasState } as any));
+      }
+    } catch {}
+  }, [roomId, currentCanvas, dispatch]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => { flushSave(); };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [flushSave]);
 
   // Get current user for display
   // Current user from Redux: user

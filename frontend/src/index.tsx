@@ -5,6 +5,15 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { store } from './store';
 import './index.css';
+import log from './utils/logger';
+
+// Optionally silence noisy prototype console logs for production to reduce overhead
+if (process.env.NODE_ENV === 'production') {
+  // Example: Could wrap or throttle high-frequency debug logs from canvas modules later
+  log.info('Frontend logging initialized at level:', log.level);
+} else {
+  log.debug('Development mode logging active (level =', log.level, ')');
+}
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
