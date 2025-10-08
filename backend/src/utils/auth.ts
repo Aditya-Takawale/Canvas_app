@@ -13,6 +13,8 @@ export const generateJwtToken = (user: User): string => {
     id: user.id,
     email: user.email,
     role: user.role,
+    // Include username in token so socket layer can access it without extra DB call
+    username: user.username,
   };
 
   return jwt.sign(

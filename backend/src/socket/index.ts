@@ -73,8 +73,11 @@ export const configureSocket = (io: Server): void => {
   io.on('connection', (socket: Socket) => {
     const userId = socket.data.user?.id || 'unknown';
     const email = socket.data.user?.email || 'unknown';
+  // Username may now be present in JWT payload; fallback gracefully
+  const username = socket.data.user?.username || (typeof email === 'string' ? email.split('@')[0] : `User${userId}`);
     const ipAddress = socket.handshake.address;
     const userAgent = socket.handshake.headers['user-agent'] || 'Unknown';
+    const isDev = process.env.NODE_ENV === 'development';
     
     // Log connection
     socketLogger.info({
@@ -86,26 +89,31 @@ export const configureSocket = (io: Server): void => {
       userAgent,
       timestamp: new Date().toISOString()
     });
-    
-    console.log('🔌 [BACKEND] New socket connection:', {
-      socketId: socket.id,
-      userId,
-      email,
-      timestamp: new Date().toISOString()
-    });
+    if (isDev) {
+      socketLogger.debug({
+        message: 'New socket connection (dev log)',
+        socketId: socket.id,
+        userId,
+        email,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Join a room
     socket.on(SocketEvents.JOIN_ROOM, async (roomId: string) => {
       try {
         socket.join(roomId);
         
-        console.log('🏠 [BACKEND] User joined room:', {
-          socketId: socket.id,
-          userId,
-          email,
-          roomId,
-          timestamp: new Date().toISOString()
-        });
+        if (isDev) {
+          socketLogger.debug({
+            message: 'User joined room (dev log)',
+            socketId: socket.id,
+            userId,
+            email,
+            roomId,
+            timestamp: new Date().toISOString()
+          });
+        }
         
         // Log room join
         socketLogger.info({
@@ -121,6 +129,7 @@ export const configureSocket = (io: Server): void => {
         io.to(roomId).emit(SocketEvents.USER_JOINED, {
           userId,
           email,
+          username,
           socketId: socket.id,
           timestamp: new Date(),
         });
@@ -184,14 +193,17 @@ export const configureSocket = (io: Server): void => {
     // Handle drawing events
     socket.on(SocketEvents.DRAWING_EVENT, (data: DrawingEventData) => {
       // Add console.log for debugging as suggested
-      console.log('🎨 [BACKEND] Received drawing data on server:', {
-        roomId: data.roomId,
-        objectType: data.objectType,
-        action: data.action,
-        hasObjectData: !!data.objectData,
-        userId: data.userId,
-        timestamp: new Date().toISOString()
-      });
+      if (isDev) {
+        socketLogger.debug({
+          message: 'Received drawing data (dev log)',
+          roomId: data.roomId,
+          objectType: data.objectType,
+          action: data.action,
+          hasObjectData: !!data.objectData,
+          userId: data.userId,
+          timestamp: new Date().toISOString()
+        });
+      }
       
       // Log drawing events at debug level (high volume)
       socketLogger.debug({
@@ -214,18 +226,23 @@ export const configureSocket = (io: Server): void => {
         timestamp: new Date(),
       });
       
-      console.log('🚀 [BACKEND] Broadcasted drawing data to other clients in room:', data.roomId);
+      if (isDev) {
+        socketLogger.debug({ message: 'Broadcasted drawing data', roomId: data.roomId });
+      }
     });
 
     // Handle instant drawing events (like chat - direct broadcast)
     socket.on('INSTANT_DRAWING', (data: { roomId: string; drawingData: any; action: string }) => {
-      console.log('⚡ [BACKEND] Instant drawing received:', {
-        roomId: data.roomId,
-        action: data.action,
-        hasDrawingData: !!data.drawingData,
-        userId,
-        timestamp: new Date().toISOString()
-      });
+      if (isDev) {
+        socketLogger.debug({
+          message: 'Instant drawing received (dev log)',
+          roomId: data.roomId,
+          action: data.action,
+          hasDrawingData: !!data.drawingData,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+      }
       
       // Broadcast immediately to OTHER clients (like chat)
       socket.to(data.roomId).emit('INSTANT_DRAWING', {
@@ -236,30 +253,64 @@ export const configureSocket = (io: Server): void => {
         timestamp: new Date().toISOString()
       });
       
-      console.log('⚡ [BACKEND] Instant drawing broadcasted to room:', data.roomId);
+      if (isDev) {
+        socketLogger.debug({ message: 'Instant drawing broadcasted', roomId: data.roomId });
+      }
     });
 
-    // Handle cursor movement
+    // Handle cursor movement (standard event)
     socket.on(SocketEvents.CURSOR_MOVE, (data: { roomId: string; x: number; y: number }) => {
-      // We don't log cursor moves as they are extremely high volume
-      
-      // Broadcast the cursor position to all OTHER clients in the room (excluding sender)
+      // Lightweight emission: broadcast with canonical event AND legacy fallback
+      const payload = { 
+        userId,
+        username,
+        x: data.x,
+        y: data.y,
+        roomId: data.roomId,
+        ts: Date.now()
+      };
+      // Canonical event
+      socket.to(data.roomId).emit(SocketEvents.CURSOR_MOVE, payload);
+      // Legacy event kept temporarily (frontend still listening for updateCursor in some components)
       socket.to(data.roomId).emit('updateCursor', {
         userId,
+        username,
         position: { x: data.x, y: data.y }
       });
+    });
+
+    // Handle user color updates
+    socket.on(SocketEvents.USER_COLOR_UPDATE, (data: { roomId: string; color: string }) => {
+      try {
+        if (!data?.roomId || !data?.color) return;
+        const payload = {
+          userId,
+          username,
+          color: data.color,
+          roomId: data.roomId,
+          ts: Date.now()
+        };
+        socket.to(data.roomId).emit(SocketEvents.USER_COLOR_UPDATE, payload);
+        // Also echo back to sender for confirmation (optional)
+        socket.emit(SocketEvents.USER_COLOR_UPDATE, payload);
+      } catch (err) {
+        socket.emit(SocketEvents.ERROR, { message: 'Failed to update user color' });
+      }
     });
     
     // Handle chat messages
     socket.on(SocketEvents.CHAT_MESSAGE, (data: { roomId: string | number; userId: number; username: string; message: string; timestamp: string }) => {
       // Log chat message
-      console.log('🗨️ [BACKEND] Chat message received:', {
-        socketId: socket.id,
-        userId,
-        roomId: data.roomId,
-        chatMessage: data.message.substring(0, 50), // Log only first 50 chars of message for privacy
-        timestamp: new Date().toISOString()
-      });
+      if (isDev) {
+        socketLogger.debug({
+          message: 'Chat message received (dev log)',
+          socketId: socket.id,
+          userId,
+          roomId: data.roomId,
+          chatMessage: data.message.substring(0, 50),
+          timestamp: new Date().toISOString()
+        });
+      }
       
       socketLogger.info({
         message: 'Chat message received',
@@ -283,7 +334,9 @@ export const configureSocket = (io: Server): void => {
       // Broadcast the message to all clients in the room except the sender
       socket.to(data.roomId.toString()).emit(SocketEvents.CHAT_MESSAGE, messageObj);
       
-      console.log('📤 [BACKEND] Chat message broadcasted to room:', data.roomId);
+      if (isDev) {
+        socketLogger.debug({ message: 'Chat message broadcasted', roomId: data.roomId });
+      }
     });
 
     // ================================
@@ -309,16 +362,21 @@ export const configureSocket = (io: Server): void => {
         const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
         let targetFound = false;
         
-        console.log(`🔍 Looking for target user ${targetUserId} in room ${roomId}`);
-        console.log(`📍 Room has ${roomSockets?.size || 0} connected sockets`);
+        if (isDev) {
+          socketLogger.debug({ message: 'Searching for target user (call invite)', targetUserId, roomId, roomSocketCount: roomSockets?.size || 0 });
+        }
         
         if (roomSockets) {
           for (const socketId of roomSockets) {
             const targetSocket = io.sockets.sockets.get(socketId);
-            console.log(`🔍 Checking socket ${socketId}, user: ${targetSocket?.data.user?.id}`);
+            if (isDev) {
+              socketLogger.debug({ message: 'Inspecting socket while searching target', candidateSocketId: socketId, candidateUserId: targetSocket?.data.user?.id });
+            }
             
             if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
-              console.log(`✅ Found target user ${targetUserId}, sending call invitation`);
+              if (isDev) {
+                socketLogger.debug({ message: 'Found target user for call invite', targetUserId });
+              }
               targetSocket.emit('call-invite', {
                 callerId: userId.toString(),
                 callerName: targetSocket.data.user.username || email,
@@ -332,7 +390,9 @@ export const configureSocket = (io: Server): void => {
         }
         
         if (!targetFound) {
-          console.log(`❌ Target user ${targetUserId} not found in room ${roomId}`);
+          if (isDev) {
+            socketLogger.debug({ message: 'Target user not found for call invite', targetUserId, roomId });
+          }
           socketLogger.warn({
             message: 'Target user not found for call invitation',
             socketId: socket.id,
@@ -554,14 +614,17 @@ export const configureSocket = (io: Server): void => {
 
     // Log all socket events for debugging
     socket.onAny((eventName, ...args) => {
-      console.log('🎭 [BACKEND] Socket event received:', {
-        eventName,
-        socketId: socket.id,
-        userId,
-        argsCount: args.length,
-        firstArg: args[0] ? JSON.stringify(args[0]).substring(0, 200) : 'none',
-        timestamp: new Date().toISOString()
-      });
+      if (isDev) {
+        socketLogger.debug({
+          message: 'Socket event received (onAny)',
+          eventName,
+          socketId: socket.id,
+          userId,
+          argsCount: args.length,
+          firstArg: args[0] ? JSON.stringify(args[0]).substring(0, 200) : 'none',
+          timestamp: new Date().toISOString()
+        });
+      }
     });
 
     // WebRTC Room Management

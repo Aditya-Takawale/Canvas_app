@@ -1,6 +1,6 @@
 import { Socket } from 'socket.io-client';
 import io from 'socket.io-client';
-import { addOperation, addActiveUser, removeActiveUser, updateUserCursor } from '../store/slices/canvasSlice';
+import { addOperation, addActiveUser, removeActiveUser, updateUserCursor, updateActiveUserColor } from '../store/slices/canvasSlice';
 import { AppDispatch } from '../store';
 import { DrawingOperation } from '../interfaces/room';
 import { SocketEvents } from '../utils/constants';
@@ -16,7 +16,7 @@ interface SocketParams {
 // Define interfaces for socket events
 interface UserJoinedData {
   userId: number;
-  username: string;
+  username?: string;
   socketId: string;
   timestamp: Date;
 }
@@ -30,9 +30,13 @@ interface UserLeftData {
 
 interface CursorPositionData {
   userId: number;
-  socketId: string;
   x: number;
   y: number;
+  roomId?: string;
+  ts?: number;
+  username?: string;
+  // legacy field support
+  socketId?: string;
 }
 
 interface CanvasSocket {
@@ -44,6 +48,7 @@ interface CanvasSocket {
   isConnected: () => boolean;
   emitChatMessage?: (data: { message: string; roomId: number; userId: number; username: string; timestamp: string }) => void;
   emitInstantDrawing: (data: { drawingData: any; action: string }) => void;
+  emitColorUpdate: (color: string) => void;
 }
 
 export const createCanvasSocket = ({
@@ -95,7 +100,7 @@ export const createCanvasSocket = ({
     socket.on(SocketEvents.USER_JOINED, (data: UserJoinedData) => {
       dispatch(addActiveUser({
         userId: data.userId,
-        username: data.username,
+        username: data.username || `User ${data.userId}`,
         socketId: data.socketId
       }));
     });
@@ -152,13 +157,23 @@ export const createCanvasSocket = ({
     });
 
     socket.on(SocketEvents.CURSOR_MOVE, (data: CursorPositionData) => {
-      // Only update cursor positions from other users
-      if (data.userId !== userId) {
-        dispatch(updateUserCursor({
-          userId: data.userId,
-          cursorPosition: { x: data.x, y: data.y }
-        }));
-      }
+      if (data.userId === userId) return;
+      // Ensure active user exists
+      const ensuredName = data.username || `User ${data.userId}`;
+      dispatch(addActiveUser({
+        userId: data.userId,
+        username: ensuredName,
+        socketId: data.socketId || `virtual-${data.userId}`
+      }));
+      dispatch(updateUserCursor({
+        userId: data.userId,
+        cursorPosition: { x: data.x, y: data.y }
+      }));
+    });
+
+    socket.on(SocketEvents.USER_COLOR_UPDATE as any, (data: { userId: number; color: string }) => {
+      if (!data || typeof data.userId === 'undefined' || !data.color) return;
+      dispatch(updateActiveUserColor({ userId: data.userId, color: data.color }));
     });
     
     // Handle server errors
@@ -258,6 +273,12 @@ export const createCanvasSocket = ({
     }
   };
 
+  const emitColorUpdate = (color: string): void => {
+    if (socket && socket.connected) {
+      socket.emit('user_color_update', { roomId, color });
+    }
+  };
+
   return {
     socket,
     connect,
@@ -266,6 +287,7 @@ export const createCanvasSocket = ({
     emitCursorPosition,
     emitChatMessage,
     emitInstantDrawing, // Add instant drawing like chat
+    emitColorUpdate,
     isConnected
   };
 };

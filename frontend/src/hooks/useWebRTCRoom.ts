@@ -1,5 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { Socket } from 'socket.io-client';
+// Define a minimal socket interface to avoid constructor/value confusion
+interface BasicSocket {
+  emit: (event: string, ...args: any[]) => void;
+  on: (event: string, listener: (...args: any[]) => void) => void;
+  off: (event: string, listener?: (...args: any[]) => void) => void;
+  id?: string;
+  connected?: boolean;
+}
 
 export interface RoomParticipant {
   userId: string;
@@ -37,11 +44,11 @@ const iceServers = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-export const useWebRTCRoom = (socket: Socket | null, roomId: number, userId: string, userName: string): UseWebRTCRoomReturn => {
+export const useWebRTCRoom = (socket: BasicSocket | null, roomId: number, userId: string, userName: string): UseWebRTCRoomReturn => {
   // Helper to normalize any incoming ID to a canonical string form
   const normalizeId = useCallback((id: string | number) => String(id), []);
   // Only log initialization when socket actually changes
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef = useRef<BasicSocket | null>(null);
   
   useEffect(() => {
     if (socket !== socketRef.current) {

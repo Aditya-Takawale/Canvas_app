@@ -58,6 +58,8 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const { currentCanvas } = useAppSelector((state) => state.canvas);
+  // Real-time participants from socket (Redux) for robust cursor names
+  const activeSocketUsers = useAppSelector((state: any) => state.canvas.activeUsers || []);
 
   // Tool state from Redux
   const activeTool = useAppSelector(state => (state.canvas as any).activeTool || 'pencil') as string;
@@ -93,6 +95,125 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
 
   // UI state
   const [isUserSelectorVisible, setIsUserSelectorVisible] = useState(true);
+  // DOM cursor refs for real-time users
+  const realtimeCursorsRef = useRef<Record<string, HTMLElement>>({});
+
+  // Utility: stable color per user (id or username)
+  const getUserColor = useCallback((identifier: string | number) => {
+    const str = String(identifier);
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    const hue = hash % 360;
+    return `hsl(${hue},70%,55%)`;
+  }, []);
+
+  // Robust real-time cursor layer fed by Redux activeUsers + their cursorPosition
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    const visible = showAllCursors; // reuse existing toggle
+
+    const existingKeys = new Set(Object.keys(realtimeCursorsRef.current));
+    const activeKeys = new Set<string>();
+
+    activeSocketUsers.forEach((u: any) => {
+      const key = `rt-${u.userId}`;
+      activeKeys.add(key);
+      if (!realtimeCursorsRef.current[key]) {
+        const el = document.createElement('div');
+        el.className = 'rt-user-cursor';
+        el.style.cssText = 'position:absolute;pointer-events:none;z-index:9998;transform:translate(-50%, -50%);transition:transform 40ms linear;';
+        const icon = document.createElement('div');
+        icon.textContent = '▣';
+        icon.style.cssText = 'font-size:14px;filter:drop-shadow(0 0 2px rgba(0,0,0,0.4));';
+        const label = document.createElement('div');
+        const displayName = u.username || `User ${u.userId}`;
+        const color = getUserColor(displayName);
+        label.textContent = displayName;
+        label.style.cssText = `margin-top:6px;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;color:#fff;white-space:nowrap;background:${color};box-shadow:0 2px 4px rgba(0,0,0,0.25);`; 
+        el.appendChild(icon);
+        el.appendChild(label);
+        // Start off-screen until first position
+        el.style.left = '-1000px';
+        el.style.top = '-1000px';
+        el.style.display = visible ? 'block' : 'none';
+        container.appendChild(el);
+        realtimeCursorsRef.current[key] = el;
+      } else {
+        // Update label if changed
+        const el = realtimeCursorsRef.current[key];
+        const label = el.children[1] as HTMLElement | undefined;
+        const displayName = u.username || `User ${u.userId}`;
+        if (label && label.textContent !== displayName) {
+          const color = getUserColor(displayName);
+          label.textContent = displayName;
+          label.style.background = color;
+        }
+        el.style.display = visible ? 'block' : 'none';
+      }
+
+      // Position update (if available)
+      if (u.cursorPosition) {
+        const el = realtimeCursorsRef.current[key];
+        el.style.left = `${u.cursorPosition.x}px`;
+        el.style.top = `${u.cursorPosition.y}px`;
+      }
+    });
+
+    // Self cursor (ensure appears even if not in activeSocketUsers yet)
+    if (user?.id) {
+      const key = `rt-self-${user.id}`;
+      activeKeys.add(key);
+      if (!realtimeCursorsRef.current[key]) {
+        const selfEl = document.createElement('div');
+        selfEl.className = 'rt-user-cursor self';
+        selfEl.style.cssText = 'position:absolute;pointer-events:none;z-index:9999;transform:translate(-50%, -50%);';
+        const icon = document.createElement('div');
+        icon.textContent = '▲';
+        icon.style.cssText = 'font-size:15px;filter:drop-shadow(0 0 2px rgba(0,0,0,0.4));';
+        const label = document.createElement('div');
+        const displayName = user.username || user.name || 'You';
+        const color = getUserColor(`self-${user.id}`);
+        label.textContent = displayName;
+        label.style.cssText = `margin-top:6px;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;color:#fff;white-space:nowrap;background:${color};box-shadow:0 2px 4px rgba(0,0,0,0.25);`;
+        selfEl.appendChild(icon);
+        selfEl.appendChild(label);
+        selfEl.style.left = '-1000px';
+        selfEl.style.top = '-1000px';
+        selfEl.style.display = visible ? 'block' : 'none';
+        container.appendChild(selfEl);
+        realtimeCursorsRef.current[key] = selfEl;
+      } else {
+        realtimeCursorsRef.current[key].style.display = visible ? 'block' : 'none';
+      }
+    }
+
+    // Remove stale DOM nodes
+    existingKeys.forEach(k => {
+      if (!activeKeys.has(k)) {
+        const el = realtimeCursorsRef.current[k];
+        if (el) el.remove();
+        delete realtimeCursorsRef.current[k];
+      }
+    });
+
+    return () => {
+      // Do not clean entire layer here; we manage lifecycle on unmount below
+    };
+  }, [activeSocketUsers, showAllCursors, user, getUserColor]);
+
+  // Update self cursor position locally for responsiveness
+  const updateSelfCursor = useCallback((x: number, y: number) => {
+    if (!user?.id) return;
+    const el = realtimeCursorsRef.current[`rt-self-${user.id}`];
+    if (el) {
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+    }
+  }, [user?.id]);
 
   // Optimized tool settings application with debouncing
   const applyToolSettings = useCallback(() => {
@@ -349,6 +470,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       const x = e.e.clientX - rect.left;
       const y = e.e.clientY - rect.top;
       updateCursorPosition(x, y);
+      updateSelfCursor(x, y);
     }
 
     // Get active user
@@ -419,6 +541,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       const x = e.e.clientX - rect.left;
       const y = e.e.clientY - rect.top;
       updateCursorPosition(x, y);
+      updateSelfCursor(x, y);
     }
 
     if (activeTool === 'pan' && panStateRef.current.isDragging) {
@@ -903,6 +1026,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     const y = e.clientY - rect.top;
 
     updateCursorPosition(x, y, containerRef.current);
+    updateSelfCursor(x, y);
   }, [updateCursorPosition]);
 
   const toggleUserSelector = () => {
@@ -988,6 +1112,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
             onUserSelect={setActiveUser}
             showAllCursors={showAllCursors}
             onToggleShowAllCursors={toggleShowAllCursors}
+            liveParticipants={activeSocketUsers}
             className="w-64"
           />
         </div>

@@ -58,6 +58,27 @@ export const DEFAULT_USERS: Omit<SimulatedUser, 'isActive' | 'lastActivity'>[] =
     color: '#10B981', // Green
     cursorIcon: '�',
     avatar: '�'
+  },
+  {
+    id: 'designer',
+    name: 'Designer',
+    color: '#F59E0B', // Amber
+    cursorIcon: '🎨',
+    avatar: '🧑‍🎨'
+  },
+  {
+    id: 'qa',
+    name: 'QA',
+    color: '#6366F1', // Indigo
+    cursorIcon: '🔍',
+    avatar: '🧪'
+  },
+  {
+    id: 'guest',
+    name: 'Guest',
+    color: '#EC4899', // Pink
+    cursorIcon: '✨',
+    avatar: '👤'
   }
 ];
 

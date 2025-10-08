@@ -300,16 +300,29 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       Object.values(otherCursorsRef.current).forEach(cursor => {
         cursor.style.display = newValue ? 'block' : 'none';
       });
+      // Self cursor
+      if (userId) {
+        const selfEl = document.getElementById(`self-${userId}`);
+        if (selfEl) selfEl.style.display = newValue ? 'block' : 'none';
+      }
       return newValue;
     });
-  }, []);
+  }, [userId]);
 
   // Send our cursor position to server (broadcasts to all other clients)
   const sendCursorPosition = useCallback((x: number, y: number) => {
     if (socketRef.current?.isConnected()) {
       socketRef.current.emitCursorPosition({ x, y });
     }
-  }, []);
+    // Update self cursor if present
+    if (userId && containerRef.current) {
+      const selfEl = document.getElementById(`self-${userId}`);
+      if (selfEl) {
+        selfEl.style.left = `${x}px`;
+        selfEl.style.top = `${y}px`;
+      }
+    }
+  }, [userId]);
 
   // Auto-refresh feature to sync canvas state periodically
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
@@ -1445,7 +1458,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
           icon.textContent = '🖱️';
           icon.style.cssText = 'font-size:14px;text-shadow:0 0 2px #000;';
           const label = document.createElement('div');
-          label.textContent = data?.username || `User ${senderUserId}`;
+          label.textContent = data?.username || data?.email?.split('@')[0] || `User ${senderUserId}`;
           label.style.cssText = 'background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-top:10px;white-space:nowrap;';
           placeholder.appendChild(icon);
           placeholder.appendChild(label);
@@ -1458,61 +1471,51 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         }
       });
 
-      // Listen for cursor updates from OTHER users
-      socket.on('updateCursor', (data: { userId: number; position: { x: number; y: number } }) => {
+      const handleCursorPayload = (data: any) => {
         if (!containerRef.current) return;
-        
-        const { userId: senderUserId, position } = data;
+        // Support both legacy (updateCursor) and canonical (CURSOR_MOVE) payload shapes
+        const senderUserId = data.userId;
+        if (String(senderUserId) === String(userId)) return;
+        const pos = data.position || { x: data.x, y: data.y };
+        if (!pos) return;
         const userKey = `user-${senderUserId}`;
-        if (String(senderUserId) === String(userId)) return; // skip self just in case
-        if (!position) return;
-        console.log('🖱️ updateCursor event', { senderUserId, x: position.x, y: position.y });
-        
-        // Check if we already have a cursor for this user
+        const labelText = data.username || data.email?.split?.('@')[0] || `User ${senderUserId}`;
+        // Create if missing
         if (!otherCursorsRef.current[userKey]) {
-          // Create a new cursor element for this user
           const newCursor = document.createElement('div');
           newCursor.className = 'other-user-cursor';
-          newCursor.style.cssText = `
-            position: absolute;
-            pointer-events: none;
-            z-index: 9999;
-            transform: translate(-50%, -50%);
-            display: ${showCursors ? 'block' : 'none'};
-          `;
-          
-          // Create cursor icon
+          newCursor.style.cssText = `position:absolute;pointer-events:none;z-index:9999;transform:translate(-50%, -50%);display:${showCursors ? 'block':'none'};`;
           const icon = document.createElement('div');
-          icon.textContent = '🔴';
-          icon.style.cssText = `
-            font-size: 16px;
-            text-shadow: 0 0 3px #dc3545;
-          `;
-          
-          // Create user label
+          icon.textContent = '�️';
+          icon.style.cssText = 'font-size:14px;text-shadow:0 0 2px #000;';
           const label = document.createElement('div');
-          label.textContent = `User ${senderUserId}`;
-          label.style.cssText = `
-            background: #dc3545;
-            color: white;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 10px;
-            font-weight: bold;
-            margin-top: 12px;
-            white-space: nowrap;
-          `;
-          
+          label.textContent = labelText;
+          label.style.cssText = 'background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-top:10px;white-space:nowrap;';
           newCursor.appendChild(icon);
           newCursor.appendChild(label);
           containerRef.current.appendChild(newCursor);
           otherCursorsRef.current[userKey] = newCursor;
+        } else {
+          // Update label if changed
+          const existing = otherCursorsRef.current[userKey];
+          const maybeLabel = existing.children[1] as HTMLElement | undefined;
+          if (maybeLabel && maybeLabel.textContent !== labelText) {
+            maybeLabel.textContent = labelText;
+          }
         }
-        
-        // Update cursor position
+        // Update position
         const cursor = otherCursorsRef.current[userKey];
-        cursor.style.left = `${position.x}px`;
-        cursor.style.top = `${position.y}px`;
+        cursor.style.left = `${pos.x}px`;
+        cursor.style.top = `${pos.y}px`;
+      };
+
+      // Listen for cursor updates from OTHER users (legacy)
+      socket.on('updateCursor', (data: { userId: number; username?: string; position: { x: number; y: number } }) => {
+        handleCursorPayload(data);
+      });
+      // Canonical event
+      socket.on('CURSOR_MOVE', (data: any) => {
+        handleCursorPayload(data);
       });
       
       // Listen for users who disconnect and remove their cursors
@@ -1524,6 +1527,28 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
           console.log('👋 Removed cursor for user', userId);
         }
       });
+
+      // Create / update self cursor (now optional display)
+      if (containerRef.current && userId) {
+        const selfKey = `self-${userId}`;
+        if (!document.getElementById(selfKey)) {
+          const selfCursor = document.createElement('div');
+          selfCursor.id = selfKey;
+            selfCursor.style.cssText = `position:absolute;pointer-events:none;z-index:9999;transform:translate(-50%, -50%);display:${showCursors ? 'block':'none'};`;
+          const icon = document.createElement('div');
+          icon.textContent = '🧑';
+          icon.style.cssText = 'font-size:14px;text-shadow:0 0 2px #000;';
+          const label = document.createElement('div');
+          label.textContent = user?.username || user?.name || `You`;
+          label.style.cssText = 'background:#10b981;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-top:10px;white-space:nowrap;';
+          selfCursor.appendChild(icon);
+          selfCursor.appendChild(label);
+          // Start off-screen until first move triggers
+          selfCursor.style.left = '-1000px';
+          selfCursor.style.top = '-1000px';
+          containerRef.current.appendChild(selfCursor);
+        }
+      }
     }
     
     // Wait for socket connection to establish before loading data

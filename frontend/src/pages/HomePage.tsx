@@ -479,7 +479,7 @@ const HomePage: React.FC = () => {
             </Link>
           </div>
           <p className="mt-6 text-sm text-indigo-200">
-            Free to use • No credit card required • Start drawing in seconds
+           
           </p>
         </div>
       </div>

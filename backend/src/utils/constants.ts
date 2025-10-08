@@ -14,6 +14,7 @@ export enum SocketEvents {
   
   // User interaction events
   CURSOR_MOVE = 'cursor_move',
+  USER_COLOR_UPDATE = 'user_color_update',
   
   // Chat events
   CHAT_MESSAGE = 'chat:message',

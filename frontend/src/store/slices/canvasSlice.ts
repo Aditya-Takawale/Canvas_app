@@ -8,7 +8,15 @@ interface CanvasResponse {
   message: string;
 }
 
-const initialState: CanvasState = {
+type ActiveUser = {
+  userId: number;
+  username: string;
+  socketId: string;
+  cursorPosition?: { x: number; y: number };
+  color?: string;
+};
+
+const initialState: CanvasState & { activeUsers: ActiveUser[] } = {
   currentCanvas: null,
   operations: [],
   loading: false,
@@ -112,7 +120,19 @@ export const updateCanvas = createAsyncThunk<
   }
 );
 
-const canvasSlice = createSlice({
+const canvasSlice = createSlice<typeof initialState, {
+  setCurrentCanvas: (state: typeof initialState, action: PayloadAction<Canvas | null>) => void;
+  addOperation: (state: typeof initialState, action: PayloadAction<DrawingOperation>) => void;
+  clearOperations: (state: typeof initialState) => void;
+  setActiveUsers: (state: typeof initialState, action: PayloadAction<ActiveUser[]>) => void;
+  updateUserCursor: (state: typeof initialState, action: PayloadAction<{ userId: number; cursorPosition: { x: number; y: number } }>) => void;
+  addActiveUser: (state: typeof initialState, action: PayloadAction<ActiveUser>) => void;
+  updateActiveUserColor: (state: typeof initialState, action: PayloadAction<{ userId: number; color: string }>) => void;
+  removeActiveUser: (state: typeof initialState, action: PayloadAction<{ userId?: number; socketId?: string }>) => void;
+  setActiveTool: (state: typeof initialState, action: PayloadAction<'select' | 'pencil' | 'eraser' | 'rectangle' | 'circle' | 'line' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'text' | 'pan'>) => void;
+  setBrushSize: (state: typeof initialState, action: PayloadAction<number>) => void;
+  setBrushColor: (state: typeof initialState, action: PayloadAction<string>) => void;
+}>({
   name: 'canvas',
   initialState,
   reducers: {
@@ -132,12 +152,7 @@ const canvasSlice = createSlice({
       console.log('🔥 Redux clearOperations called - CLEARING ALL OPERATIONS!', new Error().stack);
       state.operations = [];
     },
-    setActiveUsers: (state, action: PayloadAction<{
-      userId: number;
-      username: string;
-      socketId: string;
-      cursorPosition?: { x: number; y: number };
-    }[]>) => {
+    setActiveUsers: (state, action: PayloadAction<ActiveUser[]>) => {
       state.activeUsers = action.payload;
     },
     updateUserCursor: (state, action: PayloadAction<{
@@ -151,15 +166,17 @@ const canvasSlice = createSlice({
         state.activeUsers[userIndex].cursorPosition = cursorPosition;
       }
     },
-    addActiveUser: (state, action: PayloadAction<{
-      userId: number;
-      username: string;
-      socketId: string;
-    }>) => {
+    addActiveUser: (state, action: PayloadAction<ActiveUser>) => {
       const existingUser = state.activeUsers.find(user => user.userId === action.payload.userId);
       
       if (!existingUser) {
         state.activeUsers.push(action.payload);
+      }
+    },
+    updateActiveUserColor: (state, action: PayloadAction<{ userId: number; color: string }>) => {
+      const user = state.activeUsers.find(u => u.userId === action.payload.userId) as ActiveUser | undefined;
+      if (user) {
+        user.color = action.payload.color;
       }
     },
     removeActiveUser: (state, action: PayloadAction<{ userId?: number, socketId?: string }>) => {
@@ -278,6 +295,7 @@ export const {
   updateUserCursor,
   addActiveUser,
   removeActiveUser,
+  updateActiveUserColor,
   setActiveTool,
   setBrushSize,
   setBrushColor

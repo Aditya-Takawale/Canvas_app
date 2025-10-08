@@ -120,6 +120,11 @@ export const updateCanvas = async (req: Request, res: Response): Promise<void> =
       data: updatedCanvas,
     });
   } catch (error) {
+    logger.error('Update canvas error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to update canvas',
+    });
   }
 };
 
@@ -201,6 +206,11 @@ export const saveCanvasState = async (req: Request, res: Response): Promise<void
       data: updated,
     });
   } catch (error) {
+    logger.error('Save canvas state error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to save canvas state'
+    });
   }
 };
 

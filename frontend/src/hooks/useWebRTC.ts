@@ -1,5 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { Socket } from 'socket.io-client';
+
+interface BasicSocket {
+  emit: (event: string, ...args: any[]) => void;
+  on: (event: string, listener: (...args: any[]) => void) => void;
+  off: (event: string, listener?: (...args: any[]) => void) => void;
+  id?: string;
+  connected?: boolean;
+}
 
 export interface CallState {
   isInCall: boolean;
@@ -35,7 +42,7 @@ const iceServers = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-export const useWebRTC = (socket: Socket | null, roomId: number, userId: string): UseWebRTCReturn => {
+export const useWebRTC = (socket: BasicSocket | null, roomId: number, userId: string): UseWebRTCReturn => {
   console.log('🔧 WebRTC hook initialized with socket:', !!socket, 'roomId:', roomId, 'userId:', userId);
   const [callState, setCallState] = useState<CallState>({
     isInCall: false,

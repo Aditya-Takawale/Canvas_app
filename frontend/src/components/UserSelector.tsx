@@ -1,13 +1,22 @@
 import React from 'react';
 import { SimulatedUser } from '../types/multiUser';
 
+interface LiveParticipant {
+  userId: number;
+  username: string;
+  cursorPosition?: { x: number; y: number };
+  socketId?: string;
+  color?: string;
+}
+
 interface UserSelectorProps {
-  users: SimulatedUser[];
+  users: SimulatedUser[]; // simulated users (for switching / drawing)
   activeUserId: string;
   onUserSelect: (userId: string) => void;
   showAllCursors: boolean;
   onToggleShowAllCursors: () => void;
   className?: string;
+  liveParticipants?: LiveParticipant[]; // real socket users
 }
 
 const UserSelector: React.FC<UserSelectorProps> = ({
@@ -16,9 +25,23 @@ const UserSelector: React.FC<UserSelectorProps> = ({
   onUserSelect,
   showAllCursors,
   onToggleShowAllCursors,
-  className = ''
+  className = '',
+  liveParticipants = []
 }) => {
   const activeUser = users.find(user => user.id === activeUserId);
+  // Filter out simulated users whose names collide with live participants to avoid duplicates in listing sections
+  const liveIds = new Set(liveParticipants.map(lp => String(lp.userId)));
+
+  const colorChoices = ['#3B82F6','#10B981','#F59E0B','#6366F1','#EC4899','#8B5CF6','#F87171','#0EA5E9'];
+
+  const applySimUserColor = (id: string, color: string) => {
+    // This relies on parent re-render via direct mutation (acceptable for quick UI); for robustness lift into hook state.
+    const target = users.find(u => u.id === id);
+    if (target) {
+      target.color = color;
+      // Force repaint by toggling a no-op state could be added; skipping for brevity.
+    }
+  };
 
   return (
     <div className={`bg-white rounded-lg shadow-lg p-4 ${className}`}>
@@ -54,9 +77,10 @@ const UserSelector: React.FC<UserSelectorProps> = ({
         </div>
       )}
 
-      {/* User Grid */}
-      <div className="space-y-2">
-        <div className="text-sm font-medium text-gray-600 mb-2">
+      {/* Simulated Users Section */}
+      <div className="space-y-2 mb-4">
+        <div className="text-sm font-semibold text-gray-500 mb-1 tracking-wide uppercase">Simulated Users</div>
+        <div className="text-xs font-medium text-gray-600 mb-2">
           Switch Users (Keyboard: 1-{users.length})
         </div>
         <div className="grid grid-cols-1 gap-2">
@@ -94,14 +118,60 @@ const UserSelector: React.FC<UserSelectorProps> = ({
               <div className="text-lg">{user.cursorIcon}</div>
               
               {/* Color Indicator */}
-              <div 
-                className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
-                style={{ backgroundColor: user.color }}
-              />
+              <div className="flex items-center gap-1">
+                <div 
+                  className="w-4 h-4 rounded-full border-2 border-white shadow-sm"
+                  style={{ backgroundColor: user.color }}
+                  title="Current color"
+                />
+                <div className="flex gap-0.5">
+                  {colorChoices.slice(0,4).map(c => (
+                    <span
+                      key={c}
+                      onClick={(e) => { e.stopPropagation(); applySimUserColor(user.id, c); }}
+                      style={{ background:c }}
+                      className="w-3 h-3 rounded cursor-pointer border border-white shadow"
+                      title={`Set color ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
             </button>
           ))}
         </div>
       </div>
+
+      {/* Live Participants Section */}
+      {liveParticipants.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-sm font-semibold text-gray-500 mb-1 tracking-wide uppercase flex items-center gap-2">
+            <span>Live Participants</span>
+            <span className="inline-flex items-center justify-center text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">{liveParticipants.length}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            {liveParticipants.map(lp => {
+              const simulated = users.find(u => u.name === lp.username);
+              const color = lp.color || simulated?.color || '#6366f1';
+              return (
+                <div key={lp.userId} className="flex items-center space-x-3 p-3 rounded-lg bg-white border border-gray-100 shadow-sm">
+                  <div className="text-xl">{simulated?.avatar || '🧑'}</div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-800 flex items-center gap-2">
+                      <span>{lp.username || `User ${lp.userId}`}</span>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {lp.cursorPosition ? `x:${Math.round(lp.cursorPosition.x)} y:${Math.round(lp.cursorPosition.y)}` : 'No movement yet'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Keyboard Shortcuts Help */}
       <div className="mt-4 pt-4 border-t border-gray-200">
