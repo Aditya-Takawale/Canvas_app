@@ -1431,12 +1431,42 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         console.log('🔌 CursorsOnly: Socket disconnected:', reason);
       });
       
+      // Listen for user joins to ensure placeholder cursor boxes exist even before movement
+      socket.on('USER_JOINED', (data: any) => {
+        if (!containerRef.current) return;
+        const senderUserId = data?.userId;
+        if (String(senderUserId) === String(userId)) return; // skip self
+        const userKey = `user-${senderUserId}`;
+        if (!otherCursorsRef.current[userKey]) {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'other-user-cursor';
+          placeholder.style.cssText = `position:absolute;pointer-events:none;z-index:9999;transform:translate(-50%, -50%);display:${showCursors ? 'block':'none'};opacity:0.7;`;
+          const icon = document.createElement('div');
+          icon.textContent = '🖱️';
+          icon.style.cssText = 'font-size:14px;text-shadow:0 0 2px #000;';
+          const label = document.createElement('div');
+          label.textContent = data?.username || `User ${senderUserId}`;
+          label.style.cssText = 'background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-top:10px;white-space:nowrap;';
+          placeholder.appendChild(icon);
+          placeholder.appendChild(label);
+          // Place off-screen until first movement arrives
+          placeholder.style.left = '-1000px';
+          placeholder.style.top = '-1000px';
+          containerRef.current.appendChild(placeholder);
+          otherCursorsRef.current[userKey] = placeholder;
+          console.log('👤 Placeholder cursor created for joined user', senderUserId);
+        }
+      });
+
       // Listen for cursor updates from OTHER users
       socket.on('updateCursor', (data: { userId: number; position: { x: number; y: number } }) => {
         if (!containerRef.current) return;
         
         const { userId: senderUserId, position } = data;
         const userKey = `user-${senderUserId}`;
+        if (String(senderUserId) === String(userId)) return; // skip self just in case
+        if (!position) return;
+        console.log('🖱️ updateCursor event', { senderUserId, x: position.x, y: position.y });
         
         // Check if we already have a cursor for this user
         if (!otherCursorsRef.current[userKey]) {
@@ -1491,6 +1521,7 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         if (otherCursorsRef.current[userKey]) {
           otherCursorsRef.current[userKey].remove();
           delete otherCursorsRef.current[userKey];
+          console.log('👋 Removed cursor for user', userId);
         }
       });
     }
