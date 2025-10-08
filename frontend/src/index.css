@@ -6,13 +6,16 @@
 body {
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Prevent body scroll */
+  /* Allow vertical scrolling, still prevent horizontal scroll */
+  overflow-x: hidden;
+  overflow-y: auto;
+  height: 100%;
 }
 
-#root {
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
+html, #root {
+  height: 100%;
+  /* Remove forced overflow hidden so pages with content taller than viewport can scroll */
+  overflow: visible;
 }
 
 /* Ensure canvas containers properly handle sizing */
