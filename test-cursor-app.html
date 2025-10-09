@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+ <html lang="en">
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>Multi-User Canvas Cursors</title>
+     <script src="https://cdn.tailwindcss.com"></script>
+     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+     <style>
+         body {
+             font-family: 'Inter', sans-serif;
+             overflow: hidden; /* Prevent scrollbars from canvas interaction */
+         }
+         canvas {
+             cursor: none; /* Hide the default cursor over the canvas */
+             background-image:
+                 linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+                 linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+             background-size: 20px 20px;
+         }
+     </style>
+ </head>
+ <body class="bg-slate-100 text-slate-800 flex flex-col items-center justify-center h-screen">
+ 
+     <div id="app-container" class="w-full h-full flex flex-col items-center justify-center p-4 md:p-6">
+         <div class="w-full max-w-5xl text-center mb-4">
+             <h1 class="text-2xl md:text-3xl font-bold text-slate-900">Shared Canvas</h1>
+             <p class="text-slate-600">Move your mouse to see your cursor. Share your User ID to collaborate!</p>
+             <div id="user-info" class="mt-2 p-2 bg-slate-200 rounded-md text-sm text-slate-700 inline-block font-mono select-all">
+                 Loading...
+             </div>
+         </div>
+ 
+         <div class="w-full max-w-5xl h-[70vh] bg-white rounded-xl shadow-lg border border-slate-200">
+             <canvas id="shared-canvas" class="w-full h-full rounded-xl"></canvas>
+         </div>
+         <div class="text-center mt-4 text-xs text-slate-500">
+             <p>Powered by Firebase Firestore for real-time collaboration.</p>
+         </div>
+     </div>
+ 
+     <!-- Firebase SDK -->
+     <script type="module">
+         // --- Firebase and App Setup ---
+         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+         import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+ 
+         // --- Global Variables & Config ---
+         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "DEMO", authDomain: "DEMO", projectId: "DEMO" };
+         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+ 
+         const app = initializeApp(firebaseConfig);
+         const auth = getAuth(app);
+         const db = getFirestore(app);
+ 
+         let userId = null;
+         let cursorsCollection;
+ 
+         // --- Canvas and Drawing Setup ---
+         const canvas = document.getElementById('shared-canvas');
+         const ctx = canvas.getContext('2d');
+         const userInfoDiv = document.getElementById('user-info');
+         
+         let localMousePos = { x: -100, y: -100 }; // Start off-screen
+         const cursors = new Map(); // Store cursor data for all users
+ 
+         // --- Utility Functions ---
+         /**
+          * Generates a consistent, visually pleasing color from a string (like a user ID).
+          * @param {string} str - The input string.
+          * @returns {string} A hex color code.
+          */
+         function stringToColor(str) {
+             if (!str) return '#CCCCCC';
+             let hash = 0;
+             for (let i = 0; i < str.length; i++) {
+                 hash = str.charCodeAt(i) + ((hash << 5) - hash);
+             }
+             let color = '#';
+             for (let i = 0; i < 3; i++) {
+                 const value = (hash >> (i * 8)) & 0xFF;
+                 color += ('00' + value.toString(16)).substr(-2);
+             }
+             return color;
+         }
+ 
+         /**
+          * Resizes the canvas to match its display size for crisp rendering.
+          */
+         function resizeCanvas() {
+             const { width, height } = canvas.getBoundingClientRect();
+             canvas.width = width;
+             canvas.height = height;
+             draw(); // Redraw canvas content after resize
+         }
+ 
+         // --- Core Drawing Logic ---
+         /**
+          * Clears the canvas and redraws all cursors from the `cursors` map.
+          */
+         function draw() {
+             if (!ctx) return;
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+ 
+             cursors.forEach((cursor, id) => {
+                 const color = stringToColor(id);
+                 const isLocalUser = (id === userId);
+ 
+                 // Draw the cursor icon (a triangle)
+                 ctx.beginPath();
+                 ctx.moveTo(cursor.x, cursor.y);
+                 ctx.lineTo(cursor.x, cursor.y + 18);
+                 ctx.lineTo(cursor.x + 12, cursor.y + 12);
+                 ctx.closePath();
+                 ctx.fillStyle = color;
+                 ctx.fill();
+                 
+                 // Add a border for the local user for better visibility
+                 if(isLocalUser) {
+                     ctx.strokeStyle = '#000000';
+                     ctx.lineWidth = 1;
+                     ctx.stroke();
+                 }
+ 
+                 // Draw the user ID label next to the cursor
+                 ctx.font = '12px Inter, sans-serif';
+                 ctx.fillStyle = '#333';
+                 ctx.fillText(id.substring(0, 8) + '...', cursor.x + 18, cursor.y + 14);
+             });
+         }
+         
+         /**
+          * The main animation loop.
+          */
+         function animate() {
+             draw();
+             requestAnimationFrame(animate);
+         }
+ 
+         // --- Firebase and Event Handling Logic ---
+         /**
+          * Initializes Firebase authentication and sets up Firestore listeners.
+          */
+         async function initializeAppLogic() {
+             onAuthStateChanged(auth, async (user) => {
+                 if (user) {
+                     userId = user.uid;
+                     userInfoDiv.textContent = `Your User ID: ${userId}`;
+                     
+                     // Path for public collaborative data
+                     const collectionPath = `/artifacts/${appId}/public/data/cursors`;
+                     cursorsCollection = collection(db, collectionPath);
+ 
+                     setupListeners();
+                     animate(); // Start the animation loop after authentication
+                 }
+             });
+ 
+             // Sign in the user
+             try {
+                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                     await signInWithCustomToken(auth, __initial_auth_token);
+                 } else {
+                     await signInAnonymously(auth);
+                 }
+             } catch (error) {
+                 console.error("Authentication failed:", error);
+                 userInfoDiv.textContent = "Error: Could not authenticate.";
+             }
+         }
+ 
+         /**
+          * Sets up canvas event listeners and the Firestore snapshot listener.
+          */
+         function setupListeners() {
+             if (!userId) return;
+ 
+             const userCursorDoc = doc(cursorsCollection, userId);
+ 
+             // Listen for local mouse movement
+             canvas.addEventListener('mousemove', (e) => {
+                 const rect = canvas.getBoundingClientRect();
+                 localMousePos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                 
+                 // Update Firestore with the new position. `setDoc` is used to create or overwrite.
+                 setDoc(userCursorDoc, localMousePos, { merge: true });
+             });
+             
+             // Handle mouse leaving the canvas
+             canvas.addEventListener('mouseleave', () => {
+                  localMousePos = { x: -100, y: -100 }; // Move off-screen
+                  setDoc(userCursorDoc, localMousePos, { merge: true });
+             });
+ 
+             // Listen for changes in the cursors collection from all users
+             onSnapshot(cursorsCollection, (snapshot) => {
+                 const activeUserIds = new Set();
+                 snapshot.forEach(doc => {
+                     cursors.set(doc.id, doc.data());
+                     activeUserIds.add(doc.id);
+                 });
+                 
+                 // Clean up cursors for users who have disconnected
+                 cursors.forEach((_, id) => {
+                     if(!activeUserIds.has(id)){
+                         cursors.delete(id);
+                     }
+                 });
+             });
+ 
+             // Clean up the user's cursor document when they leave the page
+             window.addEventListener('beforeunload', () => {
+                 deleteDoc(userCursorDoc);
+             });
+         }
+         
+         // --- App Initialization ---
+         window.addEventListener('load', () => {
+             resizeCanvas();
+             initializeAppLogic();
+         });
+         window.addEventListener('resize', resizeCanvas);
+ 
+     </script>
+ </body>
+ </html>

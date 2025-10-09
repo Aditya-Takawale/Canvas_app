@@ -26,7 +26,7 @@ const LoginPage: React.FC = () => {
         // Mimic Redux loginSuccess by writing localStorage directly
         localStorage.setItem('user', JSON.stringify(result.user));
         localStorage.setItem('token', result.token);
-        navigate('/rooms');
+  navigate('/');
         return;
       } else {
         console.error('Offline login failed');
@@ -37,7 +37,7 @@ const LoginPage: React.FC = () => {
       // @ts-ignore
       const resultAction = await dispatch(login({ email: username, password }));
       if (login.fulfilled.match(resultAction)) {
-        navigate('/rooms');
+  navigate('/');
       }
     } catch (err) {
       console.error('Login failed:', err);
@@ -174,12 +174,13 @@ const LoginPage: React.FC = () => {
             {error && <ErrorAlert message={error} />}
             
             <div style={inputContainerStyle}>
-              <label htmlFor="username-input" style={srOnlyStyle}>Username</label>
-              <FaUser style={iconStyle} />
+              <label htmlFor="username-input" style={srOnlyStyle}>Email</label>
+              { /* Cast to any to appease TS older react-icons typings under strict JSX */ }
+              { (FaUser as any)({ style: iconStyle }) }
               <input
                 id="username-input"
                 type="text"
-                placeholder="Username"
+                placeholder="Email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 style={inputStyle}
@@ -189,7 +190,7 @@ const LoginPage: React.FC = () => {
 
             <div style={inputContainerStyle}>
               <label htmlFor="password-input" style={srOnlyStyle}>Password</label>
-              <FaLock style={iconStyle} />
+              { (FaLock as any)({ style: iconStyle }) }
               <input
                 id="password-input"
                 type="password"

@@ -5,13 +5,11 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
-import validateEnv from './config/validateEnv';
-import { errorHandler } from './middleware/errorHandler';
-import { notFoundHandler } from './middleware/notFoundHandler';
-import { requestLogger } from './middleware/requestLogger';
-import { configureSocket } from './socket/index';
-import { setupSwagger } from './config/swagger';
-import apiRoutes from './routes';
+import validateEnv from './config/validateEnv'; // pending relocation to common/config
+import { errorHandler, notFoundHandler, requestLogger } from './app/common/middleware';
+import { configureSocket } from './socket';
+import { setupSwagger } from './config/swagger'; // pending relocation
+import apiRoutes from './app/domains'; // new domain router aggregator
 import logger, { stream } from './utils/logger';
 
 // Load environment variables then validate required keys
@@ -25,20 +23,35 @@ const server = http.createServer(app);
 // Configurable body size limit for large canvas payloads
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '25mb';
 
+// Prepare allowed origins (support comma separated list in CORS_ORIGIN)
+const rawOrigins = process.env.CORS_ORIGIN;
+let allowedOrigins: (string | RegExp)[] = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://canvas-app-o5tp.vercel.app',
+  /^https:\/\/.*\.onrender\.com$/
+];
+if (rawOrigins) {
+  const parsed = rawOrigins.split(',').map(o => o.trim()).filter(Boolean);
+  if (parsed.length) {
+    allowedOrigins = parsed;
+  }
+}
+
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || [
-      'http://localhost:3000', 
-      'http://localhost:3001', 
-      'https://canvas-app-o5tp.vercel.app',
-      /^https:\/\/.*\.onrender\.com$/
-    ],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // non-browser or same-origin
+      if (allowedOrigins.some(o => (o instanceof RegExp ? o.test(origin) : o === origin))) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS not allowed: ' + origin));
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
-  // Allow larger messages if needed (e.g., large events)
-  maxHttpBufferSize: 5 * 1024 * 1024, // 5MB
+  maxHttpBufferSize: 5 * 1024 * 1024,
 });
 
 // Configure Socket.io
@@ -46,12 +59,13 @@ configureSocket(io);
 
 // CORS setup - make sure to handle OPTIONS preflight
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || [
-    'http://localhost:3000', 
-    'http://localhost:3001', 
-    'https://canvas-app-o5tp.vercel.app',
-    /^https:\/\/.*\.onrender\.com$/
-  ],
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.some(o => (o instanceof RegExp ? o.test(origin) : o === origin))) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   credentials: true,

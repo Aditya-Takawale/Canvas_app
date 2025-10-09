@@ -43,45 +43,62 @@ const helmet_1 = __importDefault(require("helmet"));
 const morgan_1 = __importDefault(require("morgan"));
 const socket_io_1 = require("socket.io");
 const dotenv_1 = __importDefault(require("dotenv"));
-const errorHandler_1 = require("./middleware/errorHandler");
-const notFoundHandler_1 = require("./middleware/notFoundHandler");
-const requestLogger_1 = require("./middleware/requestLogger");
-const index_1 = require("./socket/index");
-const swagger_1 = require("./config/swagger");
-const routes_1 = __importDefault(require("./routes"));
+const validateEnv_1 = __importDefault(require("./config/validateEnv")); // pending relocation to common/config
+const middleware_1 = require("./app/common/middleware");
+const socket_1 = require("./socket");
+const swagger_1 = require("./config/swagger"); // pending relocation
+const domains_1 = __importDefault(require("./app/domains")); // new domain router aggregator
 const logger_1 = __importStar(require("./utils/logger"));
-// Load environment variables
+// Load environment variables then validate required keys
 dotenv_1.default.config();
+(0, validateEnv_1.default)();
 // Initialize Express app
 const app = (0, express_1.default)();
 const server = http_1.default.createServer(app);
 // Configurable body size limit for large canvas payloads
 const MAX_BODY_SIZE = process.env.MAX_BODY_SIZE || '25mb';
+// Prepare allowed origins (support comma separated list in CORS_ORIGIN)
+const rawOrigins = process.env.CORS_ORIGIN;
+let allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://canvas-app-o5tp.vercel.app',
+    /^https:\/\/.*\.onrender\.com$/
+];
+if (rawOrigins) {
+    const parsed = rawOrigins.split(',').map(o => o.trim()).filter(Boolean);
+    if (parsed.length) {
+        allowedOrigins = parsed;
+    }
+}
 // Initialize Socket.io
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: process.env.CORS_ORIGIN || [
-            'http://localhost:3000',
-            'http://localhost:3001',
-            'https://canvas-app-o5tp.vercel.app',
-            /^https:\/\/.*\.onrender\.com$/
-        ],
+        origin: (origin, callback) => {
+            if (!origin)
+                return callback(null, true); // non-browser or same-origin
+            if (allowedOrigins.some(o => (o instanceof RegExp ? o.test(origin) : o === origin))) {
+                return callback(null, true);
+            }
+            return callback(new Error('CORS not allowed: ' + origin));
+        },
         methods: ['GET', 'POST'],
         credentials: true,
     },
-    // Allow larger messages if needed (e.g., large events)
-    maxHttpBufferSize: 5 * 1024 * 1024, // 5MB
+    maxHttpBufferSize: 5 * 1024 * 1024,
 });
 // Configure Socket.io
-(0, index_1.configureSocket)(io);
+(0, socket_1.configureSocket)(io);
 // CORS setup - make sure to handle OPTIONS preflight
 const corsOptions = {
-    origin: process.env.CORS_ORIGIN || [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://canvas-app-o5tp.vercel.app',
-        /^https:\/\/.*\.onrender\.com$/
-    ],
+    origin: (origin, callback) => {
+        if (!origin)
+            return callback(null, true);
+        if (allowedOrigins.some(o => (o instanceof RegExp ? o.test(origin) : o === origin))) {
+            return callback(null, true);
+        }
+        callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     credentials: true,
@@ -114,7 +131,7 @@ app.use((0, morgan_1.default)('dev', { stream: logger_1.stream }));
 app.use(express_1.default.json({ limit: MAX_BODY_SIZE }));
 app.use(express_1.default.urlencoded({ extended: true, limit: MAX_BODY_SIZE }));
 // Apply our custom request logger
-app.use(requestLogger_1.requestLogger);
+app.use(middleware_1.requestLogger);
 // Setup Swagger Documentation
 (0, swagger_1.setupSwagger)(app);
 // Root route
@@ -134,10 +151,10 @@ app.get('/', (req, res) => {
     });
 });
 // API Routes
-app.use('/api', routes_1.default);
+app.use('/api', domains_1.default);
 // Error handling middleware
-app.use(notFoundHandler_1.notFoundHandler);
-app.use(errorHandler_1.errorHandler);
+app.use(middleware_1.notFoundHandler);
+app.use(middleware_1.errorHandler);
 // Start the server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

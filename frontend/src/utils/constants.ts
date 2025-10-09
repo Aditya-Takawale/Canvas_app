@@ -6,12 +6,18 @@ export enum SocketEvents {
   USER_JOINED = 'user_joined',
   USER_LEFT = 'user_left',
   USER_COUNT = 'user_count',
+  ROOM_USERS = 'room_users',
   
   // Drawing events
   DRAWING_EVENT = 'drawing_event',
   INSTANT_DRAWING = 'INSTANT_DRAWING', // Fast drawing like chat
   CANVAS_CLEARED = 'canvas_cleared',
   CANVAS_STATE = 'canvas_state',
+  // Progressive stroke streaming
+  STROKE_BEGIN = 'stroke_begin',
+  STROKE_POINT = 'stroke_point',
+  STROKE_END = 'stroke_end',
+  STROKE_CANCEL = 'stroke_cancel',
   
   // User interaction events
   CURSOR_MOVE = 'cursor_move',

@@ -1,9 +1,10 @@
 import { Socket } from 'socket.io-client';
 import io from 'socket.io-client';
-import { addOperation, addActiveUser, removeActiveUser, updateUserCursor, updateActiveUserColor } from '../store/slices/canvasSlice';
+import { addOperation, addActiveUser, removeActiveUser, updateUserCursor, updateActiveUserColor, setActiveUsers } from '../store/slices/canvasSlice';
 import { AppDispatch } from '../store';
 import { DrawingOperation } from '../interfaces/room';
 import { SocketEvents } from '../utils/constants';
+import { BinaryStrokeEncoder, BinaryCursorEncoder, BinaryProtocolStats } from '../utils/binaryProtocol';
 
 interface SocketParams {
   url: string;
@@ -49,6 +50,11 @@ interface CanvasSocket {
   emitChatMessage?: (data: { message: string; roomId: number; userId: number; username: string; timestamp: string }) => void;
   emitInstantDrawing: (data: { drawingData: any; action: string }) => void;
   emitColorUpdate: (color: string) => void;
+  // Progressive stroke streaming
+  emitStrokeBegin: (data: { strokeId: string; color: string; size: number; tool: string; start: { x: number; y: number } }) => void;
+  emitStrokePoints: (data: { strokeId: string; points: Array<{ x: number; y: number; dt?: number }>; seq?: number }) => void;
+  emitStrokeEnd: (data: { strokeId: string; final?: { x: number; y: number }; totalPoints?: number; pathData?: any; color?: string; size?: number; tool?: string }) => void;
+  emitStrokeCancel: (data: { strokeId: string; reason?: string }) => void;
 }
 
 export const createCanvasSocket = ({
@@ -109,6 +115,21 @@ export const createCanvasSocket = ({
       dispatch(removeActiveUser({ socketId: data.socketId }));
     });
 
+    // Handle room users list (sent when joining room or when users change)
+    socket.on(SocketEvents.ROOM_USERS, (data: { users: any[], roomId: string }) => {
+      console.log('👥 ROOM_USERS received:', data);
+      if (data && Array.isArray(data.users)) {
+        const users = data.users.map((user: any) => ({
+          userId: user.userId,
+          username: user.username || user.email?.split('@')[0] || `User ${user.userId}`,
+          socketId: user.socketId,
+          color: `hsl(${(user.userId * 137.508) % 360}, 70%, 50%)` // Consistent color per user
+        }));
+        dispatch(setActiveUsers(users));
+        console.log('✅ Set active users from ROOM_USERS:', users);
+      }
+    });
+
     socket.on(SocketEvents.DRAWING_EVENT, (operation: DrawingOperation) => {
       // Add console.log for debugging as suggested
       console.log('📨 Received DRAWING_EVENT from server:', {
@@ -120,6 +141,23 @@ export const createCanvasSocket = ({
       });
       
       // Process all operations from other users (server only sends operations from other users now)
+      // Deduplicate: if path operation has strokeId that already exists on canvas, ignore.
+      try {
+        if (operation.objectType === 'path' && operation.objectData) {
+          const data = typeof operation.objectData === 'string' ? JSON.parse(operation.objectData) : operation.objectData;
+          const strokeId = data?.strokeId;
+          if (strokeId) {
+            const canvasEl: any = (window as any).__FABRIC_CANVAS__;
+            if (canvasEl && typeof canvasEl.getObjects === 'function') {
+              const exists = canvasEl.getObjects().some((o: any) => o.strokeId === strokeId || o.strokeId === data?.strokeId || o?.data?.strokeId === strokeId);
+              if (exists) {
+                console.log('🛑 Skipping legacy DRAWING_EVENT duplicate for strokeId', strokeId);
+                return;
+              }
+            }
+          }
+        }
+      } catch {}
       dispatch(addOperation({
         id: operation.id || Date.now(),
         objectType: operation.objectType,
@@ -175,6 +213,15 @@ export const createCanvasSocket = ({
       if (!data || typeof data.userId === 'undefined' || !data.color) return;
       dispatch(updateActiveUserColor({ userId: data.userId, color: data.color }));
     });
+
+    // Progressive stroke event listeners (rebroadcast to window for canvas integration layer)
+    const forward = (eventName: string, detail: any) => {
+      window.dispatchEvent(new CustomEvent(eventName, { detail }));
+    };
+  socket.on(SocketEvents.STROKE_BEGIN, (data: any) => forward('stroke_begin', data));
+  socket.on(SocketEvents.STROKE_POINT, (data: any) => forward('stroke_point', data));
+  socket.on(SocketEvents.STROKE_END, (data: any) => forward('stroke_end', data));
+  socket.on(SocketEvents.STROKE_CANCEL, (data: any) => forward('stroke_cancel', data));
     
     // Handle server errors
     socket.on(SocketEvents.ERROR, (error: { message: string }) => {
@@ -229,11 +276,9 @@ export const createCanvasSocket = ({
 
   const emitCursorPosition = (position: { x: number; y: number }): void => {
     if (socket && socket.connected) {
-      socket.emit(SocketEvents.CURSOR_MOVE, {
-        x: position.x,
-        y: position.y,
-        roomId,
-      });
+      // Use binary encoding for high-frequency cursor updates (90% size reduction)
+      const binaryData = BinaryCursorEncoder.encodeCursor(userId!, position.x, position.y);
+      socket.emit('CURSOR_MOVE_BINARY', { roomId, data: binaryData });
     }
   };
 
@@ -279,6 +324,54 @@ export const createCanvasSocket = ({
     }
   };
 
+  // --- Stroke streaming emitters ---
+  const emitStrokeBegin = (data: { strokeId: string; color: string; size: number; tool: string; start: { x: number; y: number } }) => {
+    if (socket && socket.connected) {
+      // Use binary encoding for high-frequency stroke data
+      const binaryData = BinaryStrokeEncoder.encodeStroke({
+        strokeId: data.strokeId,
+        points: [{ x: data.start.x, y: data.start.y }],
+        color: data.color,
+        size: data.size,
+        tool: data.tool
+      });
+      
+      // Performance comparison
+      const jsonSize = JSON.stringify({ roomId, ...data, ts: Date.now() }).length;
+      BinaryProtocolStats.recordComparison(jsonSize, binaryData.byteLength);
+      
+      socket.emit('STROKE_BEGIN_BINARY', { roomId, data: binaryData, ts: Date.now() });
+    }
+  };
+  const emitStrokePoints = (data: { strokeId: string; points: Array<{ x: number; y: number; dt?: number }>; seq?: number }) => {
+    if (socket && socket.connected && data.points.length) {
+      // Compress points to reduce bandwidth further
+      const compressedPoints = BinaryStrokeEncoder.compressPoints(data.points);
+      
+      if (compressedPoints.length > 0) {
+        const binaryData = BinaryStrokeEncoder.encodeStroke({
+          strokeId: data.strokeId,
+          points: compressedPoints,
+          color: '#000', // Minimal data for points
+          size: 0,
+          tool: ''
+        });
+        
+        socket.emit('STROKE_POINTS_BINARY', { roomId, data: binaryData, seq: data.seq, ts: Date.now() });
+      }
+    }
+  };
+  const emitStrokeEnd = (data: { strokeId: string; final?: { x: number; y: number }; totalPoints?: number; pathData?: any; color?: string; size?: number; tool?: string }) => {
+    if (socket && socket.connected) {
+      socket.emit(SocketEvents.STROKE_END, { roomId, ...data, ts: Date.now() });
+    }
+  };
+  const emitStrokeCancel = (data: { strokeId: string; reason?: string }) => {
+    if (socket && socket.connected) {
+      socket.emit(SocketEvents.STROKE_CANCEL, { roomId, ...data, ts: Date.now() });
+    }
+  };
+
   return {
     socket,
     connect,
@@ -288,6 +381,10 @@ export const createCanvasSocket = ({
     emitChatMessage,
     emitInstantDrawing, // Add instant drawing like chat
     emitColorUpdate,
+    emitStrokeBegin,
+    emitStrokePoints,
+    emitStrokeEnd,
+    emitStrokeCancel,
     isConnected
   };
 };

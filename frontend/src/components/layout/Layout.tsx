@@ -125,8 +125,8 @@ const Layout: React.FC = () => {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-grow">
+      {/* Main content (flex column; min-h-0 so children with flex can shrink properly) */}
+      <main className="flex-grow flex flex-col min-h-0">
         <Outlet />
       </main>
 

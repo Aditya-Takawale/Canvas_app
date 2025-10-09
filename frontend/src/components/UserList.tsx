@@ -20,43 +20,37 @@ const UserList: React.FC<UserListProps> = ({ roomId }) => {
   
   // Transform activeUsers from canvas state into our User format
   useEffect(() => {
-    if (!activeUsers || !currentUser) return;
-    
-    const updatedUsers = activeUsers
+    if (!activeUsers) return;
+
+    // Create a Map to ensure uniqueness by user ID
+    const userMap = new Map<number, User>();
+
+    // Add all active users
+    activeUsers
       .filter(activeUser => activeUser && activeUser.userId) // Filter out invalid users
-      .map(activeUser => ({
-        id: activeUser.userId,
-        username: activeUser.username || `User ${activeUser.userId}`, // Fallback username
-        isOnline: true,
-        isActive: true,
-        // Generate a color hash for the user's avatar based on their ID
-        avatarColor: `hsl(${(activeUser.userId * 137) % 360}, 70%, 50%)`,
-      }));
-    
-    // Make sure current user is always included
-    const hasCurrentUser = updatedUsers.some(u => u.id === currentUser.id);
-    
-    if (!hasCurrentUser && currentUser) {
-      updatedUsers.push({
-        id: currentUser.id,
-        username: currentUser.username || `User ${currentUser.id}`, // Fallback username
-        isOnline: true,
-        isActive: true,
-        avatarColor: `hsl(${(currentUser.id * 137) % 360}, 70%, 50%)`,
+      .forEach(activeUser => {
+        userMap.set(activeUser.userId, {
+          id: activeUser.userId,
+          username: activeUser.username || `User ${activeUser.userId}`,
+          isOnline: true,
+          isActive: true,
+        });
       });
-    }
-    
+
+    // Convert Map to array
+    const updatedUsers = Array.from(userMap.values());
+
     setUsers(updatedUsers);
-  }, [activeUsers, currentUser]);
+  }, [activeUsers]);
 
   return (
     <div className="user-list p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
       <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Users in Room</h2>
       
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
-        {users.map(user => (
-          <div 
-            key={user.id} 
+        {users.map((user) => (
+          <div
+            key={`user-${user.id}`}
             className={`flex items-center py-2 ${user.isActive ? 'opacity-100' : 'opacity-50'}`}
           >
             <div 

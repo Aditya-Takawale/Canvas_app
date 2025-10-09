@@ -230,3 +230,114 @@
 {"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 01:27:09"}
 {"level":"info","message":"Server running on port 5000 in undefined mode","service":"canvas-app-backend","timestamp":"2025-10-08 13:08:43"}
 {"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 13:08:43"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 14:16:53"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 14:16:53"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 14:16:53"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 14:20:41"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 14:20:41"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 14:20:41"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 14:20:59"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 14:20:59"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 14:20:59"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 14:21:25"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 14:21:25"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 14:21:25"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 14:46:10"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 14:46:10"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 14:46:10"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 15:52:55"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 15:52:55"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 15:52:55"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 15:53:17"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 15:53:17"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 15:53:17"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 16:01:48"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 16:01:48"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 16:01:48"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 16:09:18"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 16:09:18"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 16:09:18"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 16:12:21"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 16:12:21"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 16:12:21"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 16:49:08"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 16:49:08"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 16:49:08"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 17:05:41"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 17:05:41"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 17:05:41"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 17:05:59"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 17:05:59"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 17:05:59"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 17:14:24"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 17:14:24"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 17:14:24"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 17:24:45"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 17:24:45"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 17:24:45"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 18:03:55"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 18:03:55"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 18:03:55"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 18:32:43"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 18:32:43"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 18:32:43"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 18:40:25"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 18:40:25"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 18:40:25"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 21:06:22"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 21:06:22"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 21:06:22"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 21:13:09"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 21:13:09"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 21:13:09"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 21:22:54"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 21:22:54"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 21:22:54"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 21:25:15"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 21:25:15"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 21:25:15"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 21:25:55"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 21:25:55"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 21:25:55"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 21:32:54"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 21:32:54"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 21:32:54"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 21:59:31"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 21:59:31"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 21:59:31"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 22:38:46"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 22:38:46"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 22:38:46"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 22:41:09"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 22:41:09"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 22:41:09"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 23:46:16"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 23:46:16"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 23:46:16"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-08 23:48:38"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-08 23:48:38"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-08 23:48:38"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 00:09:12"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 00:09:12"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 00:09:12"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 00:09:31"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 00:09:31"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 00:09:31"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 00:52:16"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 00:52:16"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 00:52:16"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 00:54:35"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 00:54:35"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 00:54:35"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 01:52:47"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 01:52:47"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 01:52:47"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 01:55:24"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 01:55:24"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 01:55:24"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 02:05:05"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 02:05:05"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 02:05:05"}
+{"level":"info","message":"[env] Environment variables validated","service":"canvas-app-backend","timestamp":"2025-10-09 12:20:38"}
+{"level":"info","message":"Server running on port 5000 in development mode","service":"canvas-app-backend","timestamp":"2025-10-09 12:20:38"}
+{"level":"info","message":"Database URL configured: Yes","service":"canvas-app-backend","timestamp":"2025-10-09 12:20:38"}

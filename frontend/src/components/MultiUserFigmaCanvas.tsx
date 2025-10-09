@@ -1,3 +1,9 @@
+/**
+ * DEPRECATED COMPONENT
+ * MultiUserFigmaCanvas has been superseded by CursorsOnlyFigmaCanvas with integrated
+ * multi-cursor + stroke streaming. This file is retained temporarily for reference
+ * and will be removed after validation. Do not import in new code.
+ */
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { fabric } from 'fabric';
 import { useAppDispatch, useAppSelector } from '../hooks/redux';
@@ -9,10 +15,13 @@ import CursorOverlay from './CursorOverlay';
 import UserSelector from './UserSelector';
 import roomLoadingManager from '../services/roomLoadingManager';
 import { socketUrl } from '../config/environment';
+import { SocketEvents } from '../utils/constants';
 
 interface MultiUserFigmaCanvasProps {
   roomId: number;
+  /** Optional initial width fallback (will be overridden by responsive sizing) */
   width?: number;
+  /** Optional initial height fallback (will be overridden by responsive sizing) */
   height?: number;
   readOnly?: boolean;
 }
@@ -30,8 +39,8 @@ interface MultiUserFigmaCanvasProps {
  */
 const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({ 
   roomId, 
-  width = 1200, 
-  height = 800, 
+  width: initialWidth = 1200, 
+  height: initialHeight = 800, 
   readOnly = false 
 }) => {
   // Canvas refs and state
@@ -66,6 +75,99 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
   const brushSize = useAppSelector(state => (state.canvas as any).brushSize || 5) as number;
   const brushColor = useAppSelector(state => (state.canvas as any).brushColor || '#000000') as string;
 
+  // --- Progressive stroke streaming (ported) ---
+  const strokeActiveRef = useRef(false);
+  const strokeIdRef = useRef<string | null>(null);
+  const strokePointsBufferRef = useRef<Array<{ x: number; y: number; dt?: number }>>([]);
+  const strokeAllPointsRef = useRef<Array<{ x: number; y: number }>>([]);
+  const strokeLastTsRef = useRef<number>(0);
+  const strokeTotalPointsRef = useRef<number>(0);
+  const strokeSeqRef = useRef<number>(0);
+  const strokeRafRef = useRef<number | null>(null);
+  const remoteStrokeRenderScheduledRef = useRef(false);
+  const remoteStrokesRef = useRef<Record<string, fabric.Path>>({});
+  const genStrokeId = () => `stk-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+
+  const emitStrokeBegin = useCallback((x: number, y: number) => {
+    if (!socketRef.current?.isConnected()) return;
+    const strokeId = genStrokeId();
+    strokeIdRef.current = strokeId;
+    strokeActiveRef.current = true;
+    strokePointsBufferRef.current = [];
+    strokeAllPointsRef.current = [{ x, y }];
+    strokeSeqRef.current = 0;
+    strokeTotalPointsRef.current = 0;
+    strokeLastTsRef.current = performance.now();
+    socketRef.current.emitStrokeBegin({ strokeId, color: brushColor, size: brushSize, tool: 'pencil', start: { x, y } });
+  }, [brushColor, brushSize]);
+
+  const flushStrokePoints = useCallback((force = false) => {
+    if (!strokeActiveRef.current || !socketRef.current?.isConnected()) return;
+    const buf = strokePointsBufferRef.current;
+    if (!buf.length) return;
+    if (!force) {
+      const now = performance.now();
+      const elapsed = now - strokeLastTsRef.current;
+      if (buf.length < 8 && elapsed < 16) return;
+      strokeLastTsRef.current = now;
+    }
+    socketRef.current.emitStrokePoints({ strokeId: strokeIdRef.current!, points: buf.splice(0, buf.length), seq: strokeSeqRef.current++ });
+  }, []);
+
+  const strokeAnimationLoop = useCallback(() => {
+    if (!strokeActiveRef.current) { strokeRafRef.current = null; return; }
+    flushStrokePoints(false);
+    strokeRafRef.current = requestAnimationFrame(strokeAnimationLoop);
+  }, [flushStrokePoints]);
+
+  const endStroke = useCallback((cancel = false) => {
+    if (!strokeActiveRef.current || !socketRef.current?.isConnected()) return;
+    flushStrokePoints(true);
+    const strokeId = strokeIdRef.current!;
+    const totalPoints = strokeTotalPointsRef.current;
+    const canvas = fabricCanvasRef.current;
+    if (cancel) {
+      socketRef.current.emitStrokeCancel({ strokeId, reason: 'tool-switch' });
+    } else {
+      const raw = strokeAllPointsRef.current;
+      let smoothed = raw;
+      if (raw.length > 4) {
+        const win = 3;
+        smoothed = raw.map((p, i) => {
+          if (i === 0 || i === raw.length - 1) return p;
+          const start = Math.max(0, i - Math.floor(win / 2));
+          const end = Math.min(raw.length - 1, i + Math.floor(win / 2));
+          let sx = 0, sy = 0, c = 0;
+          for (let j = start; j <= end; j++) { sx += raw[j].x; sy += raw[j].y; c++; }
+          return { x: sx / c, y: sy / c };
+        });
+      }
+      if (canvas) {
+        const objects = canvas.getObjects();
+        const last = objects[objects.length - 1];
+        if (last && last.type === 'path') {
+          (last as fabric.Path).set({ path: smoothed.map((p,i)=> i===0? ['M',p.x,p.y]: ['L',p.x,p.y]) as any });
+          (last as any).strokeId = strokeId;
+          (last as any).set({ selectable: true, evented: true, opacity: 1 });
+          canvas.requestRenderAll();
+        }
+      }
+      socketRef.current.emitStrokeEnd({
+        strokeId,
+        totalPoints,
+        pathData: { type: 'path', path: smoothed.map((p,i)=> i===0? ['M',p.x,p.y]: ['L',p.x,p.y]), stroke: brushColor, strokeWidth: brushSize, fill: 'transparent' },
+        color: brushColor,
+        size: brushSize,
+        tool: 'pencil'
+      });
+    }
+    strokeActiveRef.current = false;
+    strokeIdRef.current = null;
+    strokePointsBufferRef.current = [];
+    strokeAllPointsRef.current = [];
+    if (strokeRafRef.current) { cancelAnimationFrame(strokeRafRef.current); strokeRafRef.current = null; }
+  }, [flushStrokePoints, brushColor, brushSize]);
+
   // Multi-user simulation hook
   const {
     users,
@@ -93,10 +195,31 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     maxUsers: users.length
   });
 
+  // Responsive dimensions state (overrides provided width/height after mount)
+  const [canvasDimensions, setCanvasDimensions] = useState({ width: initialWidth, height: initialHeight });
+
   // UI state
   const [isUserSelectorVisible, setIsUserSelectorVisible] = useState(true);
+  // Sync controls state (reintroduce UI for manual / auto syncing)
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const [lastManualSyncTs, setLastManualSyncTs] = useState<number | null>(null);
   // DOM cursor refs for real-time users
   const realtimeCursorsRef = useRef<Record<string, HTMLElement>>({});
+  // Hash of last persisted canvas JSON to avoid redundant saves
+  const lastCanvasHashRef = useRef<string | null>(null);
+
+  const computeCanvasHash = useCallback((json: any) => {
+    try {
+      const str = typeof json === 'string' ? json : JSON.stringify(json);
+      // Simple FNV-1a hash
+      let h = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = (h >>> 0) * 0x01000193;
+      }
+      return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+    } catch { return Math.random().toString(36).slice(2,10); }
+  }, []);
 
   // Utility: stable color per user (id or username)
   const getUserColor = useCallback((identifier: string | number) => {
@@ -518,6 +641,11 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
         isDrawingShapeRef.current = true;
         shapeStartPointRef.current = { x: pointer.x, y: pointer.y };
         break;
+      case 'pencil':
+        // Begin streaming stroke
+        emitStrokeBegin(pointer.x, pointer.y);
+        strokeRafRef.current = requestAnimationFrame(strokeAnimationLoop);
+        break;
 
       case 'pan':
         // Enable canvas panning with minimal state changes
@@ -544,7 +672,14 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       updateSelfCursor(x, y);
     }
 
-    if (activeTool === 'pan' && panStateRef.current.isDragging) {
+    if (activeTool === 'pencil' && strokeActiveRef.current) {
+      const now = performance.now();
+      const dt = strokeLastTsRef.current ? now - strokeLastTsRef.current : 0;
+      strokePointsBufferRef.current.push({ x: pointer.x, y: pointer.y, dt: Math.round(dt) });
+      strokeAllPointsRef.current.push({ x: pointer.x, y: pointer.y });
+      strokeTotalPointsRef.current += 1;
+      // Let RAF loop handle flushing
+    } else if (activeTool === 'pan' && panStateRef.current.isDragging) {
       // Handle canvas panning with minimal operations
       const vpt = canvas.viewportTransform;
       if (vpt) {
@@ -578,7 +713,9 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     const canvas = fabricCanvasRef.current;
     const pointer = canvas.getPointer(e.e);
 
-    if (activeTool === 'pan') {
+    if (activeTool === 'pencil' && strokeActiveRef.current) {
+      endStroke(false);
+    } else if (activeTool === 'pan') {
       // Stop panning
       panStateRef.current.isDragging = false;
       canvas.selection = true;
@@ -633,7 +770,13 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       }
       
       const canvasState = canvas.toJSON();
-      console.log(`💾 MultiUser: Auto-saving canvas state for room ${roomId}...`);
+      const hash = computeCanvasHash(canvasState);
+      if (lastCanvasHashRef.current === hash) {
+        console.log('⏩ MultiUser: Skipping save (no changes since last hash)', hash);
+        return;
+      }
+      lastCanvasHashRef.current = hash;
+      console.log(`💾 MultiUser: Auto-saving canvas state for room ${roomId}...`, { hash });
       
       // Only save if we have a valid current canvas context
       if (currentCanvas && currentCanvas.roomId === roomId) {
@@ -657,6 +800,31 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       dispatch(saveCanvasState({ roomId, state: canvasState }));
     }
   }, [roomId, dispatch, currentCanvas]);
+
+  // Manual sync trigger (placeholder - currently reuses flushSave)
+  const handleManualSync = useCallback(() => {
+    console.log('🔄 Manual sync triggered');
+    flushSave();
+    setLastManualSyncTs(Date.now());
+  }, [flushSave]);
+
+  // Auto-sync interval when enabled (lightweight)
+  useEffect(() => {
+    if (!autoSyncEnabled) return;
+    const id = setInterval(() => {
+      const canvas = fabricCanvasRef.current;
+      if (!canvas || isLoadingStateRef.current) return;
+      const json = canvas.toJSON();
+      const hash = computeCanvasHash(json);
+      if (lastCanvasHashRef.current === hash) {
+        // No changes – skip scheduling a full save
+        return;
+      }
+      // Schedule save via debounced pipeline
+      debouncedSave();
+    }, 3000); // every 3s
+    return () => clearInterval(id);
+  }, [autoSyncEnabled, debouncedSave, computeCanvasHash]);
   
   // Load canvas state from database using singleton manager
   const loadCanvasState = useCallback(async () => {    
@@ -831,7 +999,24 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       canvas.requestRenderAll();
     }
     
-    // Auto-save after object addition (debounced)
+    // Skip objects that are stroke-streaming paths (tagged with strokeId) or free drawing paths handled in handlePathCreated
+    const addedObj = e.target;
+    if (addedObj && (addedObj as any).strokeId) {
+      debouncedSave();
+      return; // Already emitted via stroke streaming
+    }
+
+    // Emit creation for shapes/text (non-path free drawing) instantly if socket connected
+    if (addedObj && socketRef.current?.isConnected() && addedObj.type !== 'path') {
+      const serialized = addedObj.toObject(['data']);
+      const operation = {
+        objectType: addedObj.type,
+        objectData: serialized,
+        action: 'added'
+      } as any;
+      socketRef.current.emitDrawingOperation(operation);
+    }
+
     debouncedSave();
   }, [debouncedSave, getActiveUser]);
 
@@ -850,20 +1035,58 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       timestamp: Date.now()
     });
     
-    // Auto-save after object removal (debounced)
+    // Emit delete operation if socket connected (exclude streaming cleanup removes with strokeId if needed)
+    if (socketRef.current?.isConnected() && e.target) {
+      const removedObj = e.target;
+      const operation = {
+        objectType: removedObj.type,
+        objectData: { _cid: (removedObj as any)._cid },
+        action: 'removed'
+      } as any;
+      socketRef.current.emitDrawingOperation(operation);
+    }
+
     debouncedSave();
   }, [debouncedSave, getActiveUser, addUserAction]);
 
-  // Canvas initialization - ONLY ONCE
+  // Responsive sizing effect (ResizeObserver)
+  useEffect(() => {
+    const updateSize = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      // Account for toolbar + status bar heights (approx) and padding
+      const verticalChrome = 90; // toolbar + bottom bar + margins
+      const newWidth = Math.max(400, rect.width - 4);
+      const newHeight = Math.max(300, rect.height - verticalChrome);
+      setCanvasDimensions(prev => {
+        if (prev.width === newWidth && prev.height === newHeight) return prev;
+        return { width: newWidth, height: newHeight };
+      });
+      if (fabricCanvasRef.current) {
+        fabricCanvasRef.current.setDimensions({ width: newWidth, height: newHeight });
+        fabricCanvasRef.current.requestRenderAll();
+      }
+    };
+
+    // Initial measure after mount tick
+    const raf = requestAnimationFrame(updateSize);
+    const resizeObserver = new ResizeObserver(updateSize);
+    if (containerRef.current) resizeObserver.observe(containerRef.current);
+    window.addEventListener('resize', updateSize);
+    return () => {
+      cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
+  }, []);
+
+  // Canvas initialization - ONLY ONCE (uses responsive dimensions)
   useEffect(() => {
     if (isInitializedRef.current || !canvasRef.current) return;
-    
     console.log('🎨 MultiUser: Initializing canvas (one-time only)');
-    
-    // Create canvas instance
     const canvas = new fabric.Canvas(canvasRef.current, {
-      width,
-      height,
+      width: canvasDimensions.width,
+      height: canvasDimensions.height,
       backgroundColor: '#ffffff',
       isDrawingMode: !readOnly,
       preserveObjectStacking: true,
@@ -885,7 +1108,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
     applyToolSettings();
 
     // Log canvas operations for debugging (non-intrusive)
-    console.log('🎨 MultiUser: Canvas ready with dimensions:', { width, height });
+  console.log('🎨 MultiUser: Canvas ready with dimensions:', { width: canvasDimensions.width, height: canvasDimensions.height });
 
     // Attach stable event handlers
     canvas.on('path:created', handlePathCreated);
@@ -927,7 +1150,7 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       // Dispose canvas
       canvas.dispose();
     };
-  }, []); // CRITICAL: Empty dependencies - only run once
+  }, [canvasDimensions.width, canvasDimensions.height, readOnly]); // run once; dimensions stable after first set
 
   // Flush on tab/window close
   useEffect(() => {
@@ -1078,10 +1301,108 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
   // Get active user for display
   const activeUser = getActiveUser();
 
+  // Receive legacy/operation events for shapes & paths (non-streaming) and apply to canvas
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+    const handleDrawingEvent = (operation: any) => {
+      try {
+        const { objectType, objectData, action, userId: opUserId } = operation || {};
+        // Skip own
+        if (opUserId && user && String(opUserId) === String(user.id)) return;
+        if (action === 'added' && objectType && objectData) {
+          fabric.util.enlivenObjects([objectData], (objs: fabric.Object[]) => {
+            const obj = objs[0];
+            if (obj) {
+              // Avoid duplicating stroke streaming paths
+              if ((obj as any).strokeId && Object.values(remoteStrokesRef.current).some(p => (p as any).strokeId === (obj as any).strokeId)) return;
+              canvas.add(obj);
+              canvas.requestRenderAll();
+            }
+          }, 'fabric');
+        } else if ((action === 'removed' || action === 'delete') && objectData?._cid) {
+          const target = canvas.getObjects().find(o => (o as any)._cid === objectData._cid);
+          if (target) { canvas.remove(target); canvas.requestRenderAll(); }
+        }
+      } catch (err) {
+        console.warn('⚠️ MultiUser: Failed applying drawing event', err);
+      }
+    };
+
+    const handleInstant = (e: any) => {
+      const { drawingData, action, userId: opUserId } = e.detail || {};
+      if (opUserId && user && String(opUserId) === String(user.id)) return;
+      if (action === 'path_created' && drawingData?.pathData) {
+        fabric.util.enlivenObjects([drawingData.pathData], (objs: fabric.Object[]) => {
+          const obj = objs[0]; if (!obj) return;
+          if ((obj as any).strokeId && Object.values(remoteStrokesRef.current).some(p => (p as any).strokeId === (obj as any).strokeId)) return;
+          canvas.add(obj); canvas.requestRenderAll();
+        }, 'fabric');
+      } else if (action === 'object_added' && drawingData?.objectData) {
+  fabric.util.enlivenObjects([drawingData.objectData], (objs: fabric.Object[]) => { const obj = objs[0]; if (obj) { canvas.add(obj); canvas.requestRenderAll(); } }, 'fabric');
+      }
+    };
+
+    // Attach socket-level listener if socket exists
+    const socket = socketRef.current?.socket;
+    if (socket) {
+      socket.on(SocketEvents.DRAWING_EVENT, handleDrawingEvent);
+    }
+    window.addEventListener('INSTANT_DRAWING', handleInstant as any);
+    return () => {
+      if (socket) socket.off(SocketEvents.DRAWING_EVENT, handleDrawingEvent);
+      window.removeEventListener('INSTANT_DRAWING', handleInstant as any);
+    };
+  }, [user]);
+
+  // Remote stroke rendering listeners
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+    const handleStrokeBegin = (e: any) => {
+      const p = e.detail; if (!p || !p.strokeId) return;
+      if (remoteStrokesRef.current[p.strokeId]) return;
+      const path = new fabric.Path(`M ${p.start.x} ${p.start.y}`, { stroke: p.color || '#000', strokeWidth: p.size || 2, fill: 'transparent', selectable:false, evented:false, strokeLineCap:'round', strokeLineJoin:'round' });
+      remoteStrokesRef.current[p.strokeId] = path;
+      canvas.add(path);
+    };
+    const handleStrokePoint = (e: any) => {
+      const d = e.detail; if (!d || !d.strokeId || !Array.isArray(d.points)) return;
+      const path = remoteStrokesRef.current[d.strokeId]; if (!path) return;
+      const arr: any[] = (path.path as any[]) || [];
+      d.points.forEach((pt: any) => { arr.push(['L', pt.x, pt.y]); });
+      path.set({ path: arr as any });
+      if (!remoteStrokeRenderScheduledRef.current) {
+        remoteStrokeRenderScheduledRef.current = true;
+        requestAnimationFrame(()=>{ remoteStrokeRenderScheduledRef.current = false; canvas.requestRenderAll(); });
+      }
+    };
+    const handleStrokeEnd = (e: any) => {
+      const d = e.detail; if (!d?.strokeId) return; const path = remoteStrokesRef.current[d.strokeId];
+      if (path) {
+        if (d.pathData?.path && Array.isArray(d.pathData.path)) {
+          path.set({ path: d.pathData.path });
+        }
+        path.selectable = true; path.evented = true; canvas.requestRenderAll();
+      }
+    };
+    const handleStrokeCancel = (e: any) => { const d = e.detail; if (!d?.strokeId) return; const path = remoteStrokesRef.current[d.strokeId]; if (path) { canvas.remove(path); delete remoteStrokesRef.current[d.strokeId]; } };
+    window.addEventListener('stroke_begin', handleStrokeBegin);
+    window.addEventListener('stroke_point', handleStrokePoint);
+    window.addEventListener('stroke_end', handleStrokeEnd);
+    window.addEventListener('stroke_cancel', handleStrokeCancel);
+    return () => {
+      window.removeEventListener('stroke_begin', handleStrokeBegin);
+      window.removeEventListener('stroke_point', handleStrokePoint);
+      window.removeEventListener('stroke_end', handleStrokeEnd);
+      window.removeEventListener('stroke_cancel', handleStrokeCancel);
+    };
+  }, []);
+
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-full flex flex-col bg-white"
+  className="relative w-full h-full min-h-0 flex flex-col bg-white overflow-hidden"
       onMouseMove={handleContainerMouseMove}
       style={{ width: '100%', height: '100%' }}
     >
@@ -1111,11 +1432,30 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
           </div>
         </div>
 
-        {/* Right section: Tool info */}
-        <div className="flex items-center space-x-3 text-sm text-gray-600">
+        {/* Right section: Tool info & Sync controls */}
+        <div className="flex items-center space-x-2 text-sm text-gray-600">
           <div className="px-2 py-1 bg-gray-100 rounded-md">
             Tool: {activeTool}
           </div>
+          <button
+            onClick={() => setAutoSyncEnabled(v => !v)}
+            className={`px-3 py-1.5 rounded-md border ${autoSyncEnabled ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100' : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'}`}
+            title="Toggle automatic periodic persistence"
+          >
+            {autoSyncEnabled ? '✅ Auto' : '▶ Auto'}
+          </button>
+          <button
+            onClick={handleManualSync}
+            className="px-3 py-1.5 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-300"
+            title="Immediately persist current canvas state"
+          >
+            🔄 Sync
+          </button>
+          {lastManualSyncTs && (
+            <div className="text-[10px] text-gray-500 italic px-1">
+              {Math.round((Date.now() - lastManualSyncTs)/1000)}s ago
+            </div>
+          )}
           <button
             onClick={handleClearCanvas}
             className="px-3 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100"
@@ -1141,8 +1481,14 @@ const MultiUserFigmaCanvas: React.FC<MultiUserFigmaCanvasProps> = ({
       )}
 
       {/* Canvas Area */}
-      <div className="flex-1 relative">
-        <canvas ref={canvasRef} />
+      <div className="flex-1 relative overflow-hidden">
+        <canvas 
+          ref={canvasRef} 
+          width={canvasDimensions.width} 
+          height={canvasDimensions.height} 
+          className="w-full h-full block" 
+          style={{ maxWidth: '100%', maxHeight: '100%' }}
+        />
         
         {/* Cursor Overlay */}
         <CursorOverlay

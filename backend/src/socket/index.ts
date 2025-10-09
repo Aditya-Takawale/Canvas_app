@@ -3,6 +3,7 @@ import logger, { socketLogger } from '../utils/logger';
 import { verifyJwtToken } from '../utils/auth';
 import { DrawingEventData } from '../interfaces/socket';
 import { SocketEvents } from '../utils/constants';
+import { BackendBinaryDecoder, BackendBinaryStats } from '../utils/binaryProtocol';
 
 /**
  * Configure Socket.io server and handle socket connections
@@ -141,11 +142,25 @@ export const configureSocket = (io: Server): void => {
           roomId,
         });
         
+        // Send current room users list to all users (including the newly joined one)
+        const roomUsers = sockets.map(s => ({
+          userId: s.data.user?.id,
+          username: s.data.user?.username,
+          email: s.data.user?.email,
+          socketId: s.id,
+        })).filter(user => user.userId); // Filter out any invalid users
+        
+        io.to(roomId).emit(SocketEvents.ROOM_USERS, {
+          users: roomUsers,
+          roomId,
+        });
+        
         // Log current room state
         socketLogger.debug({
           message: 'Room status update',
           roomId,
           userCount: sockets.length,
+          roomUsers: roomUsers.length,
           timestamp: new Date().toISOString()
         });
       } catch (error) {
@@ -231,6 +246,148 @@ export const configureSocket = (io: Server): void => {
       }
     });
 
+    // ================================
+    // Progressive Stroke Streaming Events
+    // ================================
+
+    interface StrokeBeginPayload { roomId: string; strokeId: string; color: string; size: number; tool: string; start: { x: number; y: number }; ts?: number }
+    interface StrokePointPayload { roomId: string; strokeId: string; points: Array<{ x: number; y: number; dt?: number }>; seq?: number; ts?: number }
+  interface StrokeEndPayload { roomId: string; strokeId: string; final?: { x: number; y: number }; totalPoints?: number; ts?: number; pathData?: any; color?: string; size?: number; tool?: string }
+    interface StrokeCancelPayload { roomId: string; strokeId: string; reason?: string; ts?: number }
+
+    const validateRoom = (roomId?: string) => typeof roomId === 'string' && roomId.length < 100;
+    const clampSize = (n: any) => {
+      const v = Number(n);
+      if (Number.isNaN(v)) return 1;
+      return Math.max(1, Math.min(128, v));
+    };
+    const colorRegex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+    socket.on(SocketEvents.STROKE_BEGIN, (payload: StrokeBeginPayload) => {
+      try {
+        if (!validateRoom(payload?.roomId)) return;
+        if (!payload.strokeId) return;
+        const safe = {
+          ...payload,
+          size: clampSize(payload.size),
+          color: colorRegex.test(payload.color) ? payload.color : '#000000',
+          userId,
+          ts: payload.ts || Date.now()
+        };
+        socket.to(payload.roomId).emit(SocketEvents.STROKE_BEGIN, safe);
+      } catch (err) {
+        socketLogger.warn({ message: 'stroke_begin error', err: (err as Error).message });
+      }
+    });
+
+    // HIGH-PERFORMANCE BINARY STROKE HANDLERS (24-hour optimization)
+    socket.on('STROKE_BEGIN_BINARY', (payload: { roomId: string; data: ArrayBuffer; ts: number }) => {
+      try {
+        if (!validateRoom(payload?.roomId)) return;
+        
+        const binaryStroke = BackendBinaryDecoder.decodeStroke(payload.data);
+        const legacyData = BackendBinaryDecoder.toLegacyStroke(binaryStroke, payload.roomId, userId, email);
+        
+        // Broadcast to room using optimized format
+        socket.to(payload.roomId).emit(SocketEvents.STROKE_BEGIN, {
+          strokeId: binaryStroke.strokeId,
+          color: binaryStroke.color,
+          size: clampSize(binaryStroke.size),
+          tool: binaryStroke.tool,
+          start: binaryStroke.points[0],
+          userId,
+          ts: payload.ts
+        });
+        
+        // Track performance (dev only)
+        if (isDev) {
+          const estimatedJsonSize = JSON.stringify(legacyData).length;
+          BackendBinaryStats.recordProcessed(estimatedJsonSize, payload.data.byteLength);
+          socketLogger.debug({ message: 'Binary stroke begin processed', strokeId: binaryStroke.strokeId });
+        }
+      } catch (err) {
+        socketLogger.warn({ message: 'binary stroke_begin error', err: (err as Error).message });
+      }
+    });
+
+    socket.on('STROKE_POINTS_BINARY', (payload: { roomId: string; data: ArrayBuffer; seq?: number; ts: number }) => {
+      try {
+        if (!validateRoom(payload?.roomId)) return;
+        
+        const binaryStroke = BackendBinaryDecoder.decodeStroke(payload.data);
+        
+        // Broadcast compressed points directly
+        socket.to(payload.roomId).emit(SocketEvents.STROKE_POINT, {
+          strokeId: binaryStroke.strokeId,
+          points: binaryStroke.points.slice(0, 50), // Limit batch size
+          seq: payload.seq,
+          userId,
+          ts: payload.ts
+        });
+        
+      } catch (err) {
+        socketLogger.warn({ message: 'binary stroke_points error', err: (err as Error).message });
+      }
+    });
+
+    socket.on(SocketEvents.STROKE_POINT, (payload: StrokePointPayload) => {
+      try {
+        if (!validateRoom(payload?.roomId)) return;
+        if (!payload.strokeId || !Array.isArray(payload.points) || !payload.points.length) return;
+        // Limit batch size
+        const pts = payload.points.slice(0, 50).map(p => ({ x: +p.x, y: +p.y, dt: p.dt && p.dt > 0 && p.dt < 1000 ? p.dt : undefined }));
+        const safe = { roomId: payload.roomId, strokeId: payload.strokeId, points: pts, seq: payload.seq, userId, ts: payload.ts || Date.now() };
+        socket.to(payload.roomId).emit(SocketEvents.STROKE_POINT, safe);
+      } catch (err) {
+        socketLogger.warn({ message: 'stroke_point error', err: (err as Error).message });
+      }
+    });
+
+    socket.on(SocketEvents.STROKE_END, (payload: StrokeEndPayload) => {
+      try {
+        if (!validateRoom(payload?.roomId)) return;
+        if (!payload.strokeId) return;
+        const safe = { ...payload, userId, ts: payload.ts || Date.now() };
+        // Broadcast stroke_end first
+        socket.to(payload.roomId).emit(SocketEvents.STROKE_END, safe);
+        // Legacy bridge: emit DRAWING_EVENT so existing persistence flow can capture completed stroke
+        // Now include full pathData if provided for accurate history replay
+        const legacy: DrawingEventData = {
+          roomId: payload.roomId,
+          objectType: 'path',
+          action: 'added',
+          objectData: {
+            strokeId: payload.strokeId,
+            finalized: true,
+            totalPoints: payload.totalPoints,
+            color: payload.color,
+            size: payload.size,
+            tool: payload.tool,
+            pathData: payload.pathData
+          },
+          userId
+        };
+        socket.to(payload.roomId).emit(SocketEvents.DRAWING_EVENT, {
+          ...legacy,
+          email,
+          timestamp: new Date()
+        });
+      } catch (err) {
+        socketLogger.warn({ message: 'stroke_end error', err: (err as Error).message });
+      }
+    });
+
+    socket.on(SocketEvents.STROKE_CANCEL, (payload: StrokeCancelPayload) => {
+      try {
+        if (!validateRoom(payload?.roomId)) return;
+        if (!payload.strokeId) return;
+        const safe = { ...payload, userId, ts: payload.ts || Date.now() };
+        socket.to(payload.roomId).emit(SocketEvents.STROKE_CANCEL, safe);
+      } catch (err) {
+        socketLogger.warn({ message: 'stroke_cancel error', err: (err as Error).message });
+      }
+    });
+
     // Handle instant drawing events (like chat - direct broadcast)
     socket.on('INSTANT_DRAWING', (data: { roomId: string; drawingData: any; action: string }) => {
       if (isDev) {
@@ -277,6 +434,28 @@ export const configureSocket = (io: Server): void => {
         username,
         position: { x: data.x, y: data.y }
       });
+    });
+
+    // HIGH-PERFORMANCE BINARY CURSOR HANDLER (90% bandwidth reduction)
+    socket.on('CURSOR_MOVE_BINARY', (payload: { roomId: string; data: ArrayBuffer }) => {
+      try {
+        if (!validateRoom(payload?.roomId)) return;
+        
+        const cursorData = BackendBinaryDecoder.decodeCursor(payload.data);
+        
+        // Broadcast to room with lightweight payload
+        socket.to(payload.roomId).emit(SocketEvents.CURSOR_MOVE, {
+          userId: cursorData.userId,
+          username,
+          x: cursorData.x,
+          y: cursorData.y,
+          roomId: payload.roomId,
+          ts: Date.now()
+        });
+        
+      } catch (err) {
+        socketLogger.warn({ message: 'binary cursor_move error', err: (err as Error).message });
+      }
     });
 
     // Handle user color updates

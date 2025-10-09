@@ -37,6 +37,7 @@ exports.configureSocket = void 0;
 const logger_1 = __importStar(require("../utils/logger"));
 const auth_1 = require("../utils/auth");
 const constants_1 = require("../utils/constants");
+const binaryProtocol_1 = require("../utils/binaryProtocol");
 /**
  * Configure Socket.io server and handle socket connections
  * @param io - Socket.io server instance
@@ -99,8 +100,11 @@ const configureSocket = (io) => {
     io.on('connection', (socket) => {
         const userId = socket.data.user?.id || 'unknown';
         const email = socket.data.user?.email || 'unknown';
+        // Username may now be present in JWT payload; fallback gracefully
+        const username = socket.data.user?.username || (typeof email === 'string' ? email.split('@')[0] : `User${userId}`);
         const ipAddress = socket.handshake.address;
         const userAgent = socket.handshake.headers['user-agent'] || 'Unknown';
+        const isDev = process.env.NODE_ENV === 'development';
         // Log connection
         logger_1.socketLogger.info({
             message: 'User connected to socket',
@@ -111,23 +115,29 @@ const configureSocket = (io) => {
             userAgent,
             timestamp: new Date().toISOString()
         });
-        console.log('🔌 [BACKEND] New socket connection:', {
-            socketId: socket.id,
-            userId,
-            email,
-            timestamp: new Date().toISOString()
-        });
+        if (isDev) {
+            logger_1.socketLogger.debug({
+                message: 'New socket connection (dev log)',
+                socketId: socket.id,
+                userId,
+                email,
+                timestamp: new Date().toISOString()
+            });
+        }
         // Join a room
         socket.on(constants_1.SocketEvents.JOIN_ROOM, async (roomId) => {
             try {
                 socket.join(roomId);
-                console.log('🏠 [BACKEND] User joined room:', {
-                    socketId: socket.id,
-                    userId,
-                    email,
-                    roomId,
-                    timestamp: new Date().toISOString()
-                });
+                if (isDev) {
+                    logger_1.socketLogger.debug({
+                        message: 'User joined room (dev log)',
+                        socketId: socket.id,
+                        userId,
+                        email,
+                        roomId,
+                        timestamp: new Date().toISOString()
+                    });
+                }
                 // Log room join
                 logger_1.socketLogger.info({
                     message: 'User joined room',
@@ -141,6 +151,7 @@ const configureSocket = (io) => {
                 io.to(roomId).emit(constants_1.SocketEvents.USER_JOINED, {
                     userId,
                     email,
+                    username,
                     socketId: socket.id,
                     timestamp: new Date(),
                 });
@@ -150,11 +161,23 @@ const configureSocket = (io) => {
                     count: sockets.length,
                     roomId,
                 });
+                // Send current room users list to all users (including the newly joined one)
+                const roomUsers = sockets.map(s => ({
+                    userId: s.data.user?.id,
+                    username: s.data.user?.username,
+                    email: s.data.user?.email,
+                    socketId: s.id,
+                })).filter(user => user.userId); // Filter out any invalid users
+                io.to(roomId).emit(constants_1.SocketEvents.ROOM_USERS, {
+                    users: roomUsers,
+                    roomId,
+                });
                 // Log current room state
                 logger_1.socketLogger.debug({
                     message: 'Room status update',
                     roomId,
                     userCount: sockets.length,
+                    roomUsers: roomUsers.length,
                     timestamp: new Date().toISOString()
                 });
             }
@@ -197,14 +220,17 @@ const configureSocket = (io) => {
         // Handle drawing events
         socket.on(constants_1.SocketEvents.DRAWING_EVENT, (data) => {
             // Add console.log for debugging as suggested
-            console.log('🎨 [BACKEND] Received drawing data on server:', {
-                roomId: data.roomId,
-                objectType: data.objectType,
-                action: data.action,
-                hasObjectData: !!data.objectData,
-                userId: data.userId,
-                timestamp: new Date().toISOString()
-            });
+            if (isDev) {
+                logger_1.socketLogger.debug({
+                    message: 'Received drawing data (dev log)',
+                    roomId: data.roomId,
+                    objectType: data.objectType,
+                    action: data.action,
+                    hasObjectData: !!data.objectData,
+                    userId: data.userId,
+                    timestamp: new Date().toISOString()
+                });
+            }
             // Log drawing events at debug level (high volume)
             logger_1.socketLogger.debug({
                 message: 'Drawing event',
@@ -224,17 +250,159 @@ const configureSocket = (io) => {
                 email,
                 timestamp: new Date(),
             });
-            console.log('🚀 [BACKEND] Broadcasted drawing data to other clients in room:', data.roomId);
+            if (isDev) {
+                logger_1.socketLogger.debug({ message: 'Broadcasted drawing data', roomId: data.roomId });
+            }
+        });
+        const validateRoom = (roomId) => typeof roomId === 'string' && roomId.length < 100;
+        const clampSize = (n) => {
+            const v = Number(n);
+            if (Number.isNaN(v))
+                return 1;
+            return Math.max(1, Math.min(128, v));
+        };
+        const colorRegex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+        socket.on(constants_1.SocketEvents.STROKE_BEGIN, (payload) => {
+            try {
+                if (!validateRoom(payload?.roomId))
+                    return;
+                if (!payload.strokeId)
+                    return;
+                const safe = {
+                    ...payload,
+                    size: clampSize(payload.size),
+                    color: colorRegex.test(payload.color) ? payload.color : '#000000',
+                    userId,
+                    ts: payload.ts || Date.now()
+                };
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.STROKE_BEGIN, safe);
+            }
+            catch (err) {
+                logger_1.socketLogger.warn({ message: 'stroke_begin error', err: err.message });
+            }
+        });
+        // HIGH-PERFORMANCE BINARY STROKE HANDLERS (24-hour optimization)
+        socket.on('STROKE_BEGIN_BINARY', (payload) => {
+            try {
+                if (!validateRoom(payload?.roomId))
+                    return;
+                const binaryStroke = binaryProtocol_1.BackendBinaryDecoder.decodeStroke(payload.data);
+                const legacyData = binaryProtocol_1.BackendBinaryDecoder.toLegacyStroke(binaryStroke, payload.roomId, userId, email);
+                // Broadcast to room using optimized format
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.STROKE_BEGIN, {
+                    strokeId: binaryStroke.strokeId,
+                    color: binaryStroke.color,
+                    size: clampSize(binaryStroke.size),
+                    tool: binaryStroke.tool,
+                    start: binaryStroke.points[0],
+                    userId,
+                    ts: payload.ts
+                });
+                // Track performance (dev only)
+                if (isDev) {
+                    const estimatedJsonSize = JSON.stringify(legacyData).length;
+                    binaryProtocol_1.BackendBinaryStats.recordProcessed(estimatedJsonSize, payload.data.byteLength);
+                    logger_1.socketLogger.debug({ message: 'Binary stroke begin processed', strokeId: binaryStroke.strokeId });
+                }
+            }
+            catch (err) {
+                logger_1.socketLogger.warn({ message: 'binary stroke_begin error', err: err.message });
+            }
+        });
+        socket.on('STROKE_POINTS_BINARY', (payload) => {
+            try {
+                if (!validateRoom(payload?.roomId))
+                    return;
+                const binaryStroke = binaryProtocol_1.BackendBinaryDecoder.decodeStroke(payload.data);
+                // Broadcast compressed points directly
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.STROKE_POINT, {
+                    strokeId: binaryStroke.strokeId,
+                    points: binaryStroke.points.slice(0, 50), // Limit batch size
+                    seq: payload.seq,
+                    userId,
+                    ts: payload.ts
+                });
+            }
+            catch (err) {
+                logger_1.socketLogger.warn({ message: 'binary stroke_points error', err: err.message });
+            }
+        });
+        socket.on(constants_1.SocketEvents.STROKE_POINT, (payload) => {
+            try {
+                if (!validateRoom(payload?.roomId))
+                    return;
+                if (!payload.strokeId || !Array.isArray(payload.points) || !payload.points.length)
+                    return;
+                // Limit batch size
+                const pts = payload.points.slice(0, 50).map(p => ({ x: +p.x, y: +p.y, dt: p.dt && p.dt > 0 && p.dt < 1000 ? p.dt : undefined }));
+                const safe = { roomId: payload.roomId, strokeId: payload.strokeId, points: pts, seq: payload.seq, userId, ts: payload.ts || Date.now() };
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.STROKE_POINT, safe);
+            }
+            catch (err) {
+                logger_1.socketLogger.warn({ message: 'stroke_point error', err: err.message });
+            }
+        });
+        socket.on(constants_1.SocketEvents.STROKE_END, (payload) => {
+            try {
+                if (!validateRoom(payload?.roomId))
+                    return;
+                if (!payload.strokeId)
+                    return;
+                const safe = { ...payload, userId, ts: payload.ts || Date.now() };
+                // Broadcast stroke_end first
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.STROKE_END, safe);
+                // Legacy bridge: emit DRAWING_EVENT so existing persistence flow can capture completed stroke
+                // Now include full pathData if provided for accurate history replay
+                const legacy = {
+                    roomId: payload.roomId,
+                    objectType: 'path',
+                    action: 'added',
+                    objectData: {
+                        strokeId: payload.strokeId,
+                        finalized: true,
+                        totalPoints: payload.totalPoints,
+                        color: payload.color,
+                        size: payload.size,
+                        tool: payload.tool,
+                        pathData: payload.pathData
+                    },
+                    userId
+                };
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.DRAWING_EVENT, {
+                    ...legacy,
+                    email,
+                    timestamp: new Date()
+                });
+            }
+            catch (err) {
+                logger_1.socketLogger.warn({ message: 'stroke_end error', err: err.message });
+            }
+        });
+        socket.on(constants_1.SocketEvents.STROKE_CANCEL, (payload) => {
+            try {
+                if (!validateRoom(payload?.roomId))
+                    return;
+                if (!payload.strokeId)
+                    return;
+                const safe = { ...payload, userId, ts: payload.ts || Date.now() };
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.STROKE_CANCEL, safe);
+            }
+            catch (err) {
+                logger_1.socketLogger.warn({ message: 'stroke_cancel error', err: err.message });
+            }
         });
         // Handle instant drawing events (like chat - direct broadcast)
         socket.on('INSTANT_DRAWING', (data) => {
-            console.log('⚡ [BACKEND] Instant drawing received:', {
-                roomId: data.roomId,
-                action: data.action,
-                hasDrawingData: !!data.drawingData,
-                userId,
-                timestamp: new Date().toISOString()
-            });
+            if (isDev) {
+                logger_1.socketLogger.debug({
+                    message: 'Instant drawing received (dev log)',
+                    roomId: data.roomId,
+                    action: data.action,
+                    hasDrawingData: !!data.drawingData,
+                    userId,
+                    timestamp: new Date().toISOString()
+                });
+            }
             // Broadcast immediately to OTHER clients (like chat)
             socket.to(data.roomId).emit('INSTANT_DRAWING', {
                 drawingData: data.drawingData,
@@ -243,27 +411,83 @@ const configureSocket = (io) => {
                 email,
                 timestamp: new Date().toISOString()
             });
-            console.log('⚡ [BACKEND] Instant drawing broadcasted to room:', data.roomId);
+            if (isDev) {
+                logger_1.socketLogger.debug({ message: 'Instant drawing broadcasted', roomId: data.roomId });
+            }
         });
-        // Handle cursor movement
+        // Handle cursor movement (standard event)
         socket.on(constants_1.SocketEvents.CURSOR_MOVE, (data) => {
-            // We don't log cursor moves as they are extremely high volume
-            // Broadcast the cursor position to all OTHER clients in the room (excluding sender)
+            // Lightweight emission: broadcast with canonical event AND legacy fallback
+            const payload = {
+                userId,
+                username,
+                x: data.x,
+                y: data.y,
+                roomId: data.roomId,
+                ts: Date.now()
+            };
+            // Canonical event
+            socket.to(data.roomId).emit(constants_1.SocketEvents.CURSOR_MOVE, payload);
+            // Legacy event kept temporarily (frontend still listening for updateCursor in some components)
             socket.to(data.roomId).emit('updateCursor', {
                 userId,
+                username,
                 position: { x: data.x, y: data.y }
             });
+        });
+        // HIGH-PERFORMANCE BINARY CURSOR HANDLER (90% bandwidth reduction)
+        socket.on('CURSOR_MOVE_BINARY', (payload) => {
+            try {
+                if (!validateRoom(payload?.roomId))
+                    return;
+                const cursorData = binaryProtocol_1.BackendBinaryDecoder.decodeCursor(payload.data);
+                // Broadcast to room with lightweight payload
+                socket.to(payload.roomId).emit(constants_1.SocketEvents.CURSOR_MOVE, {
+                    userId: cursorData.userId,
+                    username,
+                    x: cursorData.x,
+                    y: cursorData.y,
+                    roomId: payload.roomId,
+                    ts: Date.now()
+                });
+            }
+            catch (err) {
+                logger_1.socketLogger.warn({ message: 'binary cursor_move error', err: err.message });
+            }
+        });
+        // Handle user color updates
+        socket.on(constants_1.SocketEvents.USER_COLOR_UPDATE, (data) => {
+            try {
+                if (!data?.roomId || !data?.color)
+                    return;
+                const payload = {
+                    userId,
+                    username,
+                    color: data.color,
+                    roomId: data.roomId,
+                    ts: Date.now()
+                };
+                socket.to(data.roomId).emit(constants_1.SocketEvents.USER_COLOR_UPDATE, payload);
+                // Also echo back to sender for confirmation (optional)
+                socket.emit(constants_1.SocketEvents.USER_COLOR_UPDATE, payload);
+            }
+            catch (err) {
+                socket.emit(constants_1.SocketEvents.ERROR, { message: 'Failed to update user color' });
+            }
         });
         // Handle chat messages
         socket.on(constants_1.SocketEvents.CHAT_MESSAGE, (data) => {
             // Log chat message
-            console.log('🗨️ [BACKEND] Chat message received:', {
-                socketId: socket.id,
-                userId,
-                roomId: data.roomId,
-                chatMessage: data.message.substring(0, 50), // Log only first 50 chars of message for privacy
-                timestamp: new Date().toISOString()
-            });
+            if (isDev) {
+                logger_1.socketLogger.debug({
+                    message: 'Chat message received (dev log)',
+                    socketId: socket.id,
+                    userId,
+                    roomId: data.roomId,
+                    chatMessage: data.message.substring(0, 50),
+                    timestamp: new Date().toISOString()
+                });
+            }
             logger_1.socketLogger.info({
                 message: 'Chat message received',
                 socketId: socket.id,
@@ -283,7 +507,9 @@ const configureSocket = (io) => {
             };
             // Broadcast the message to all clients in the room except the sender
             socket.to(data.roomId.toString()).emit(constants_1.SocketEvents.CHAT_MESSAGE, messageObj);
-            console.log('📤 [BACKEND] Chat message broadcasted to room:', data.roomId);
+            if (isDev) {
+                logger_1.socketLogger.debug({ message: 'Chat message broadcasted', roomId: data.roomId });
+            }
         });
         // ================================
         // WebRTC Signaling Events
@@ -304,14 +530,19 @@ const configureSocket = (io) => {
                 // Find target user's socket in the room
                 const roomSockets = io.sockets.adapter.rooms.get(roomId.toString());
                 let targetFound = false;
-                console.log(`🔍 Looking for target user ${targetUserId} in room ${roomId}`);
-                console.log(`📍 Room has ${roomSockets?.size || 0} connected sockets`);
+                if (isDev) {
+                    logger_1.socketLogger.debug({ message: 'Searching for target user (call invite)', targetUserId, roomId, roomSocketCount: roomSockets?.size || 0 });
+                }
                 if (roomSockets) {
                     for (const socketId of roomSockets) {
                         const targetSocket = io.sockets.sockets.get(socketId);
-                        console.log(`🔍 Checking socket ${socketId}, user: ${targetSocket?.data.user?.id}`);
+                        if (isDev) {
+                            logger_1.socketLogger.debug({ message: 'Inspecting socket while searching target', candidateSocketId: socketId, candidateUserId: targetSocket?.data.user?.id });
+                        }
                         if (targetSocket && targetSocket.data.user?.id.toString() === targetUserId) {
-                            console.log(`✅ Found target user ${targetUserId}, sending call invitation`);
+                            if (isDev) {
+                                logger_1.socketLogger.debug({ message: 'Found target user for call invite', targetUserId });
+                            }
                             targetSocket.emit('call-invite', {
                                 callerId: userId.toString(),
                                 callerName: targetSocket.data.user.username || email,
@@ -324,7 +555,9 @@ const configureSocket = (io) => {
                     }
                 }
                 if (!targetFound) {
-                    console.log(`❌ Target user ${targetUserId} not found in room ${roomId}`);
+                    if (isDev) {
+                        logger_1.socketLogger.debug({ message: 'Target user not found for call invite', targetUserId, roomId });
+                    }
                     logger_1.socketLogger.warn({
                         message: 'Target user not found for call invitation',
                         socketId: socket.id,
@@ -537,14 +770,17 @@ const configureSocket = (io) => {
         });
         // Log all socket events for debugging
         socket.onAny((eventName, ...args) => {
-            console.log('🎭 [BACKEND] Socket event received:', {
-                eventName,
-                socketId: socket.id,
-                userId,
-                argsCount: args.length,
-                firstArg: args[0] ? JSON.stringify(args[0]).substring(0, 200) : 'none',
-                timestamp: new Date().toISOString()
-            });
+            if (isDev) {
+                logger_1.socketLogger.debug({
+                    message: 'Socket event received (onAny)',
+                    eventName,
+                    socketId: socket.id,
+                    userId,
+                    argsCount: args.length,
+                    firstArg: args[0] ? JSON.stringify(args[0]).substring(0, 200) : 'none',
+                    timestamp: new Date().toISOString()
+                });
+            }
         });
         // WebRTC Room Management
         socket.on('join-webrtc-room', (data) => {

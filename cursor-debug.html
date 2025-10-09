@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick Cursor Test</title>
+    <style>
+        body { margin: 0; font-family: Arial; }
+        #container { position: relative; width: 100vw; height: 100vh; background: #f0f0f0; }
+        .cursor { position: absolute; width: 0; height: 0; border-left: 10px solid red; border-right: 0; border-top: 5px solid transparent; border-bottom: 15px solid transparent; pointer-events: none; z-index: 1000; }
+        .label { position: absolute; left: 15px; top: 0; background: black; color: white; padding: 2px 5px; border-radius: 3px; font-size: 10px; }
+        #status { position: fixed; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div id="status">Connecting...</div>
+    <div id="container"></div>
+
+    <script>
+        const container = document.getElementById('container');
+        const status = document.getElementById('status');
+        let ws = null;
+        let userId = null;
+        let cursors = {};
+
+        function connect() {
+            ws = new WebSocket('ws://localhost:8081');
+            
+            ws.onopen = () => {
+                status.innerHTML = 'Connected ✅';
+                console.log('Connected to WebSocket');
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                console.log('Received:', message);
+                
+                if (message.type === 'USER_ID') {
+                    userId = message.userId;
+                    status.innerHTML = `Connected ✅ (${userId})`;
+                }
+                
+                if (message.type === 'CURSORS_UPDATE') {
+                    console.log('Updating cursors:', message.cursors);
+                    updateCursors(message.cursors);
+                }
+            };
+            
+            ws.onclose = () => {
+                status.innerHTML = 'Disconnected ❌';
+                setTimeout(connect, 2000);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                status.innerHTML = 'Error ⚠️';
+            };
+        }
+
+        function updateCursors(newCursors) {
+            // Remove old cursors
+            Object.keys(cursors).forEach(id => {
+                if (!newCursors[id] && cursors[id]) {
+                    cursors[id].remove();
+                    delete cursors[id];
+                }
+            });
+
+            // Add/update cursors
+            Object.entries(newCursors).forEach(([id, cursor]) => {
+                if (id === userId) return; // Don't show own cursor
+
+                if (!cursors[id]) {
+                    const cursorEl = document.createElement('div');
+                    cursorEl.className = 'cursor';
+                    cursorEl.innerHTML = `<div class="label">${id.substring(5, 11)}</div>`;
+                    container.appendChild(cursorEl);
+                    cursors[id] = cursorEl;
+                    console.log('Created cursor for', id);
+                }
+
+                if (cursor.x >= 0 && cursor.y >= 0) {
+                    cursors[id].style.left = cursor.x + 'px';
+                    cursors[id].style.top = cursor.y + 'px';
+                    cursors[id].style.display = 'block';
+                } else {
+                    cursors[id].style.display = 'none';
+                }
+            });
+
+            status.innerHTML = `Connected ✅ (${userId}) - ${Object.keys(newCursors).length} users`;
+        }
+
+        container.addEventListener('mousemove', (e) => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'CURSOR_MOVE',
+                    x: e.clientX,
+                    y: e.clientY
+                }));
+            }
+        });
+
+        container.addEventListener('mouseleave', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'CURSOR_MOVE',
+                    x: -100,
+                    y: -100
+                }));
+            }
+        });
+
+        connect();
+    </script>
+</body>
+</html>

@@ -10,6 +10,7 @@
     "build": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
     "postinstall": "cd backend && npm install && cd ../frontend && npm install",
     "dev": "powershell -ExecutionPolicy Bypass -File run-app.ps1",
+  "collab": "node collab-server.js",
     "status": "powershell -ExecutionPolicy Bypass -File status.ps1",
     "stop": "powershell -Command \"netstat -ano | findstr ':5000\\|:3000\\|:3001\\|:5555' | ForEach-Object { $parts = $_ -split '\\s+'; if ($parts.Length -gt 4 -and $parts[4] -ne '0') { Stop-Process -Id $parts[4] -Force -ErrorAction SilentlyContinue } }\""
   },
@@ -20,6 +21,7 @@
     "@types/socket.io-client": "^1.4.36",
     "framer-motion": "^12.23.22",
     "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "ws": "^8.18.3"
   }
 }

@@ -104,6 +104,15 @@ const CursorOverlay: React.FC<CursorOverlayProps> = ({
     return () => container.removeEventListener('mousemove', handleMouseMove);
   }, [containerRef, activeUserId, addTrailPoint, onCursorMove]);
 
+  // Add trail points for remote cursor movements
+  useEffect(() => {
+    Object.entries(cursorPositions).forEach(([userId, position]) => {
+      if (userId !== activeUserId) {
+        addTrailPoint(userId, position.x, position.y);
+      }
+    });
+  }, [cursorPositions, activeUserId, addTrailPoint]);
+
   // Render cursor component
   const renderCursor = useCallback((user: SimulatedUser, position: CursorPosition) => {
     const isActive = user.id === activeUserId;

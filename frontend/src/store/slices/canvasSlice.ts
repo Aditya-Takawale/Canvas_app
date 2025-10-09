@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import type { Dispatch } from 'redux';
 import { CanvasState, Canvas, DrawingOperation } from '../../interfaces/room';
 import api from '../../services/api';
 
@@ -169,10 +170,17 @@ const canvasSlice = createSlice<typeof initialState, {
       }
     },
     addActiveUser: (state, action: PayloadAction<ActiveUser>) => {
-      const existingUser = state.activeUsers.find(user => user.userId === action.payload.userId);
+      // Check for duplicates by both userId and socketId
+      const existingUser = state.activeUsers.find(
+        user => user.userId === action.payload.userId || user.socketId === action.payload.socketId
+      );
       
       if (!existingUser) {
         state.activeUsers.push(action.payload);
+      } else {
+        // Update existing user info
+        const index = state.activeUsers.indexOf(existingUser);
+        state.activeUsers[index] = { ...existingUser, ...action.payload };
       }
     },
     updateActiveUserColor: (state, action: PayloadAction<{ userId: number; color: string }>) => {
@@ -310,7 +318,6 @@ export const selectCanvasLoading = (state: { canvas: CanvasState }) => state.can
 export const selectCanvasError = (state: { canvas: CanvasState }) => state.canvas.error;
 
 // --- Micro-batching for operations (outside reducer purity) ---
-import type { Dispatch } from 'redux';
 
 let __opBuffer: DrawingOperation[] = [];
 let __flushHandle: any = null;

@@ -115,6 +115,11 @@ const updateCanvas = async (req, res) => {
         });
     }
     catch (error) {
+        logger_1.default.error('Update canvas error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to update canvas',
+        });
     }
 };
 exports.updateCanvas = updateCanvas;
@@ -185,6 +190,11 @@ const saveCanvasState = async (req, res) => {
         });
     }
     catch (error) {
+        logger_1.default.error('Save canvas state error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to save canvas state'
+        });
     }
 };
 exports.saveCanvasState = saveCanvasState;

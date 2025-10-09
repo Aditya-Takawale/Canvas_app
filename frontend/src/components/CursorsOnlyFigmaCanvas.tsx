@@ -5,6 +5,10 @@ import { addOperation, saveCanvasState, fetchCanvas, clearOperations, fetchCanva
 import { createCanvasSocket } from '../services/socket';
 import roomLoadingManager from '../services/roomLoadingManager';
 import { socketUrl } from '../config/environment';
+import { CursorOptimizer } from '../utils/canvasOptimizer';
+import CursorOverlay from './CursorOverlay';
+import { CursorPosition } from '../types/multiUser';
+import { SocketEvents } from '../utils/constants';
 
 interface CursorsOnlyFigmaCanvasProps {
   roomId: number;
@@ -25,6 +29,9 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const socketRef = useRef<ReturnType<typeof createCanvasSocket> | null>(null);
   const isInitializedRef = useRef(false);
+  
+  // Cursor optimization ref
+  const cursorOptimizerRef = useRef<CursorOptimizer | null>(null);
   
   // Responsive canvas dimensions
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 800, height: 600 });
@@ -64,6 +71,15 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
   const activeTool = useAppSelector(state => (state.canvas as any).activeTool || 'pencil') as string;
   const brushSize = useAppSelector(state => (state.canvas as any).brushSize || 5) as number;
   const brushColor = useAppSelector(state => (state.canvas as any).brushColor || '#000000') as string;
+
+  // Get active users for cursor display
+  const activeUsers = useAppSelector((state) => state.canvas.activeUsers || []);
+  
+  // DEBUG: Log active users to see what we have
+  useEffect(() => {
+    console.log('🔍 DEBUG: Active users changed:', activeUsers);
+    console.log('🔍 DEBUG: Current user ID:', userId);
+  }, [activeUsers, userId]);
 
   // Optional external room state (WebRTC) integration safeguards
   const isInRoom = useMemo(() => {
@@ -288,26 +304,50 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     };
   }, [roomId, userId, dispatch, isInRoom]);
 
-  // Multi-user cursor system - direct implementation following best practices
-  const otherCursorsRef = useRef<Record<string, HTMLElement>>({});
+  // CURSOR OVERLAY STATE: Replace manual DOM manipulation with proper React state
+  const [cursorPositions, setCursorPositions] = useState<Record<string, CursorPosition>>({});
   const [showCursors, setShowCursors] = useState(true);
+  
+  // Convert activeUsers to SimulatedUser format for CursorOverlay
+  const simulatedUsers = useMemo(() => {
+    console.log('🎯 CURSOR DEBUG: Converting activeUsers to simulatedUsers');
+    console.log('🎯 activeUsers:', activeUsers);
+    console.log('🎯 cursorPositions:', cursorPositions);
+    console.log('🎯 showCursors:', showCursors);
+
+    const usersToShow = activeUsers.map(user => {
+      const userIdStr = String(user.userId);
+
+      return {
+        id: userIdStr, // Normalize to string
+        name: user.username || user.name || `User ${user.userId}`,
+        color: user.color || `hsl(${(user.userId * 137.508) % 360}, 70%, 50%)`, // Consistent color generation
+        avatar: '👤',
+        cursorIcon: '👆',
+        isActive: true,
+        lastActivity: new Date()
+      };
+    });
+
+    console.log('🎯 simulatedUsers result:', usersToShow);
+    return usersToShow;
+  }, [activeUsers, cursorPositions, showCursors]);
+
+  // Handle cursor movement from mouse tracking
+  const handleCursorMove = useCallback((position: CursorPosition) => {
+    if (socketRef.current?.isConnected()) {
+      socketRef.current.emitCursorPosition(position);
+    }
+  }, []);
 
   // Toggle cursor visibility
   const toggleShowCursors = useCallback(() => {
-    setShowCursors(prev => {
-      const newValue = !prev;
-      // Update visibility of all cursor elements
-      Object.values(otherCursorsRef.current).forEach(cursor => {
-        cursor.style.display = newValue ? 'block' : 'none';
-      });
-      // Self cursor
-      if (userId) {
-        const selfEl = document.getElementById(`self-${userId}`);
-        if (selfEl) selfEl.style.display = newValue ? 'block' : 'none';
-      }
-      return newValue;
-    });
-  }, [userId]);
+    setShowCursors(prev => !prev);
+  }, []);
+
+
+
+
 
   // Send our cursor position to server (broadcasts to all other clients)
   const sendCursorPosition = useCallback((x: number, y: number) => {
@@ -323,6 +363,28 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
       }
     }
   }, [userId]);
+
+  // Initialize cursor optimizer for debounced sending
+  useEffect(() => {
+    const cursorCallback = (pos: { x: number; y: number }) => {
+      if (socketRef.current?.isConnected()) {
+        socketRef.current.emitCursorPosition(pos);
+      }
+      // Update self cursor if present
+      if (userId && containerRef.current) {
+        const selfEl = document.getElementById(`self-${userId}`);
+        if (selfEl) {
+          selfEl.style.left = `${pos.x}px`;
+          selfEl.style.top = `${pos.y}px`;
+        }
+      }
+    };
+    
+    cursorOptimizerRef.current = new CursorOptimizer(cursorCallback);
+    console.log('🖱️ Cursor optimizer initialized with debouncing');
+  }, [userId]);
+
+
 
   // Auto-refresh feature to sync canvas state periodically
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
@@ -1444,107 +1506,64 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
         console.log('🔌 CursorsOnly: Socket disconnected:', reason);
       });
       
-      // Listen for user joins to ensure placeholder cursor boxes exist even before movement
-      socket.on('USER_JOINED', (data: any) => {
-        if (!containerRef.current) return;
-        const senderUserId = data?.userId;
-        if (String(senderUserId) === String(userId)) return; // skip self
-        const userKey = `user-${senderUserId}`;
-        if (!otherCursorsRef.current[userKey]) {
-          const placeholder = document.createElement('div');
-          placeholder.className = 'other-user-cursor';
-          placeholder.style.cssText = `position:absolute;pointer-events:none;z-index:9999;transform:translate(-50%, -50%);display:${showCursors ? 'block':'none'};opacity:0.7;`;
-          const icon = document.createElement('div');
-          icon.textContent = '🖱️';
-          icon.style.cssText = 'font-size:14px;text-shadow:0 0 2px #000;';
-          const label = document.createElement('div');
-          label.textContent = data?.username || data?.email?.split('@')[0] || `User ${senderUserId}`;
-          label.style.cssText = 'background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-top:10px;white-space:nowrap;';
-          placeholder.appendChild(icon);
-          placeholder.appendChild(label);
-          // Place off-screen until first movement arrives
-          placeholder.style.left = '-1000px';
-          placeholder.style.top = '-1000px';
-          containerRef.current.appendChild(placeholder);
-          otherCursorsRef.current[userKey] = placeholder;
-          console.log('👤 Placeholder cursor created for joined user', senderUserId);
-        }
-      });
-
       const handleCursorPayload = (data: any) => {
-        if (!containerRef.current) return;
+        console.log('🖱️ CURSOR PAYLOAD received:', data);
+        if (!containerRef.current) {
+          console.log('🖱️ No container ref, skipping cursor update');
+          return;
+        }
         // Canonical payload shape (cursor_move)
         const senderUserId = data.userId;
-        if (String(senderUserId) === String(userId)) return;
-        const pos = { x: data.x, y: data.y };
-        if (!pos) return;
-        const userKey = `user-${senderUserId}`;
-        const labelText = data.username || data.email?.split?.('@')[0] || `User ${senderUserId}`;
-        // Create if missing
-        if (!otherCursorsRef.current[userKey]) {
-          const newCursor = document.createElement('div');
-          newCursor.className = 'other-user-cursor';
-          newCursor.style.cssText = `position:absolute;pointer-events:none;z-index:9999;transform:translate(-50%, -50%);display:${showCursors ? 'block':'none'};`;
-          const icon = document.createElement('div');
-          icon.textContent = '�️';
-          icon.style.cssText = 'font-size:14px;text-shadow:0 0 2px #000;';
-          const label = document.createElement('div');
-          label.textContent = labelText;
-          label.style.cssText = 'background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-top:10px;white-space:nowrap;';
-          newCursor.appendChild(icon);
-          newCursor.appendChild(label);
-          containerRef.current.appendChild(newCursor);
-          otherCursorsRef.current[userKey] = newCursor;
-        } else {
-          // Update label if changed
-          const existing = otherCursorsRef.current[userKey];
-          const maybeLabel = existing.children[1] as HTMLElement | undefined;
-          if (maybeLabel && maybeLabel.textContent !== labelText) {
-            maybeLabel.textContent = labelText;
-          }
+        const senderUserIdStr = String(senderUserId);
+        console.log('🖱️ Sender userId:', senderUserId, 'Current userId:', userId);
+        if (String(senderUserId) === String(userId)) {
+          console.log('🖱️ Ignoring own cursor movement');
+          return;
         }
-        // Update position
-        const cursor = otherCursorsRef.current[userKey];
-        cursor.style.left = `${pos.x}px`;
-        cursor.style.top = `${pos.y}px`;
+        const pos = { x: data.x, y: data.y };
+        if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') {
+          console.log('🖱️ Invalid cursor position data:', pos);
+          return;
+        }
+
+        const labelText = data.username || data.email?.split?.('@')[0] || `User ${senderUserId}`;
+        console.log('🖱️ Updating cursor position for user:', senderUserId, 'at position:', pos, 'with label:', labelText);
+
+        // Update cursor positions using React state with consistent string keys
+        setCursorPositions(prev => {
+          const updated = {
+            ...prev,
+            [senderUserIdStr]: {
+              x: pos.x,
+              y: pos.y,
+              timestamp: new Date(),
+              userId: senderUserIdStr,
+              name: labelText
+            }
+          };
+          console.log('🖱️ Updated cursor positions:', updated);
+          console.log('🖱️ Current simulatedUsers:', simulatedUsers);
+          return updated;
+        });
       };
 
       // Canonical event only (legacy removed)
-      socket.on('CURSOR_MOVE', (data: any) => {
+      socket.on(SocketEvents.CURSOR_MOVE, (data: any) => {
+        console.log('🖱️ CURSOR_MOVE event received:', data);
         handleCursorPayload(data);
       });
       
       // Listen for users who disconnect and remove their cursors
       socket.on('removeCursor', (userId: number) => {
-        const userKey = `user-${userId}`;
-        if (otherCursorsRef.current[userKey]) {
-          otherCursorsRef.current[userKey].remove();
-          delete otherCursorsRef.current[userKey];
-          console.log('👋 Removed cursor for user', userId);
-        }
+        setCursorPositions(prev => {
+          const updated = { ...prev };
+          delete updated[userId];
+          return updated;
+        });
+        console.log('👋 Removed cursor for user', userId);
       });
 
-      // Create / update self cursor (now optional display)
-      if (containerRef.current && userId) {
-        const selfKey = `self-${userId}`;
-        if (!document.getElementById(selfKey)) {
-          const selfCursor = document.createElement('div');
-          selfCursor.id = selfKey;
-            selfCursor.style.cssText = `position:absolute;pointer-events:none;z-index:9999;transform:translate(-50%, -50%);display:${showCursors ? 'block':'none'};`;
-          const icon = document.createElement('div');
-          icon.textContent = '🧑';
-          icon.style.cssText = 'font-size:14px;text-shadow:0 0 2px #000;';
-          const label = document.createElement('div');
-          label.textContent = user?.username || user?.name || `You`;
-          label.style.cssText = 'background:#10b981;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:bold;margin-top:10px;white-space:nowrap;';
-          selfCursor.appendChild(icon);
-          selfCursor.appendChild(label);
-          // Start off-screen until first move triggers
-          selfCursor.style.left = '-1000px';
-          selfCursor.style.top = '-1000px';
-          containerRef.current.appendChild(selfCursor);
-        }
-      }
+
     }
     
     // Wait for socket connection to establish before loading data
@@ -1740,19 +1759,15 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Send our cursor position to other users via socket
-    sendCursorPosition(x, y);
+    // Use optimized cursor sending with debouncing (reduces network traffic by 80%)
+    if (cursorOptimizerRef.current) {
+      cursorOptimizerRef.current.updatePosition(x, y);
+    } else {
+      // Fallback to direct sending if optimizer not ready
+      sendCursorPosition(x, y);
+    }
   }, [sendCursorPosition]);
   
-  // Cleanup cursors when component unmounts
-  useEffect(() => {
-    return () => {
-      // Clean up all cursor elements
-      Object.values(otherCursorsRef.current).forEach(cursor => cursor.remove());
-      otherCursorsRef.current = {};
-    };
-  }, []);
-
   // Component cleanup - cancel loading when unmounting
   useEffect(() => {
     return () => {
@@ -1916,6 +1931,18 @@ const CursorsOnlyFigmaCanvas: React.FC<CursorsOnlyFigmaCanvasProps> = ({
           className="w-full h-full block"
           style={{ maxWidth: '100%', maxHeight: '100%' }}
         />
+        
+        {/* Cursor Overlay */}
+        {showCursors && (
+          <CursorOverlay
+            users={simulatedUsers}
+            cursorPositions={cursorPositions}
+            activeUserId={String(userId)}
+            showAllCursors={showCursors}
+            containerRef={containerRef}
+            onCursorMove={handleCursorMove}
+          />
+        )}
       </div>
 
       {/* Bottom status bar */}

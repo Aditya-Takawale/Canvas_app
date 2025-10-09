@@ -43,7 +43,7 @@ const RegisterPage: React.FC = () => {
         if (result) {
           localStorage.setItem('user', JSON.stringify(result.user));
           localStorage.setItem('token', result.token);
-          navigate('/rooms');
+          navigate('/');
           return;
         }
       } catch (err: any) {
@@ -60,7 +60,7 @@ const RegisterPage: React.FC = () => {
       const resultAction = await dispatch(register({ username, email, password }));
       
       if (register.fulfilled.match(resultAction)) {
-        navigate('/rooms');
+  navigate('/');
       } else if (register.rejected.match(resultAction) && resultAction.payload) {
         setError(resultAction.payload);
       } else {

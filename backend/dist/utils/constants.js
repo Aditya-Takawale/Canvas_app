@@ -9,13 +9,20 @@ var SocketEvents;
     SocketEvents["USER_JOINED"] = "user_joined";
     SocketEvents["USER_LEFT"] = "user_left";
     SocketEvents["USER_COUNT"] = "user_count";
+    SocketEvents["ROOM_USERS"] = "room_users";
     // Drawing events
     SocketEvents["DRAWING_EVENT"] = "drawing_event";
     SocketEvents["INSTANT_DRAWING"] = "INSTANT_DRAWING";
     SocketEvents["CANVAS_CLEARED"] = "canvas_cleared";
     SocketEvents["CANVAS_STATE"] = "canvas_state";
+    // Progressive stroke streaming
+    SocketEvents["STROKE_BEGIN"] = "stroke_begin";
+    SocketEvents["STROKE_POINT"] = "stroke_point";
+    SocketEvents["STROKE_END"] = "stroke_end";
+    SocketEvents["STROKE_CANCEL"] = "stroke_cancel";
     // User interaction events
     SocketEvents["CURSOR_MOVE"] = "cursor_move";
+    SocketEvents["USER_COLOR_UPDATE"] = "user_color_update";
     // Chat events
     SocketEvents["CHAT_MESSAGE"] = "chat:message";
     // System events

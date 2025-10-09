@@ -51,6 +51,7 @@ Stop-ProcessOnPort 5000
 Stop-ProcessOnPort 3000  
 Stop-ProcessOnPort 3001
 Stop-ProcessOnPort 5555
+Stop-ProcessOnPort 8081
 Start-Sleep -Seconds 2
 
 # Build backend
@@ -107,6 +108,25 @@ if (-not $backendReady) {
     exit 1
 }
 
+# Start collaboration WebSocket server (collab-server.js)
+Write-Host "[START] Starting collaboration server (WebSocket)..." -ForegroundColor Green
+Set-Location "$PSScriptRoot"
+
+# Kill any existing process on port 8081 first
+Stop-ProcessOnPort 8081
+Start-Sleep -Seconds 1
+
+# Start fresh collab server
+$collabProcess = Start-Process powershell -ArgumentList "-Command", "Set-Location '$PSScriptRoot'; node collab-server.js" -WindowStyle Hidden -PassThru
+Start-Sleep -Seconds 2
+
+# Verify it started
+if (Test-Port 8081) {
+    Write-Host "[SUCCESS] Collaboration server started on ws://localhost:8081" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] Collaboration server did not start (port 8081 not listening)" -ForegroundColor Yellow
+}
+
 # Start frontend
 Write-Host "[START] Starting frontend server..." -ForegroundColor Green
 Set-Location "$PSScriptRoot\frontend"
@@ -149,6 +169,7 @@ if ($frontendPort) {
 } else {
     Write-Host "[FAILED]  Frontend: Not started" -ForegroundColor Red
 }
+if (Test-Port 8081) { Write-Host "[RUNNING] Collab WS: ws://localhost:8081" -ForegroundColor Green } else { Write-Host "[FAILED]  Collab WS: ws://localhost:8081" -ForegroundColor Red }
 
 Write-Host ""
 Write-Host "LOGIN CREDENTIALS:" -ForegroundColor Cyan
@@ -193,6 +214,7 @@ Write-Host "=========================================" -ForegroundColor Gray
 if (Test-Port 5000) { Write-Host "[RUNNING] Backend:       http://localhost:5000" -ForegroundColor Green } else { Write-Host "[FAILED]  Backend:       http://localhost:5000" -ForegroundColor Red }
 if ($frontendPort) { Write-Host "[RUNNING] Frontend:      http://localhost:$frontendPort" -ForegroundColor Green } else { Write-Host "[FAILED]  Frontend:      Not started" -ForegroundColor Red }
 if (Test-Port 5555) { Write-Host "[RUNNING] Prisma Studio: http://localhost:5555" -ForegroundColor Green } else { Write-Host "[FAILED]  Prisma Studio: Not started" -ForegroundColor Red }
+if (Test-Port 8081) { Write-Host "[RUNNING] Collab WS:     ws://localhost:8081" -ForegroundColor Green } else { Write-Host "[FAILED]  Collab WS:     ws://localhost:8081" -ForegroundColor Red }
 Write-Host "=========================================" -ForegroundColor Gray
 
 if (-not $NoWait) {
@@ -221,6 +243,11 @@ if (-not $NoWait) {
                 Write-Host "[ERROR] Prisma Studio stopped!" -ForegroundColor Red
                 break
             }
+            # Check Collaboration WS
+            if (-not (Test-Port 8081)) {
+                Write-Host "[ERROR] Collaboration server stopped!" -ForegroundColor Red
+                break
+            }
             
             # Status check every minute
             if ((Get-Date).Second -eq 0) {
@@ -242,11 +269,15 @@ if (-not $NoWait) {
         if ($studioProcess -and -not $studioProcess.HasExited) {
             $studioProcess.Kill()
         }
+        if ($collabProcess -and -not $collabProcess.HasExited) {
+            $collabProcess.Kill()
+        }
         
         Stop-ProcessOnPort 5000
         Stop-ProcessOnPort 3000
         Stop-ProcessOnPort 3001
         Stop-ProcessOnPort 5555
+        Stop-ProcessOnPort 8081
         
         Write-Host "[SUCCESS] All servers stopped" -ForegroundColor Green
     }

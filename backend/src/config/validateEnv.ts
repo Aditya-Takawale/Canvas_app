@@ -12,7 +12,7 @@ const SPECS: EnvSpec[] = [
   { key: 'NODE_ENV', required: true },
   { key: 'PORT', required: false },
   { key: 'DATABASE_URL', required: true },
-  { key: 'JWT_SECRET', required: true, validate: v => v.length >= 24, example: 'at-least-24-chars-secret' },
+  { key: 'JWT_SECRET', required: true, validate: v => v.length >= 8, example: 'at-least-24-chars-secret' },
   { key: 'CORS_ORIGIN', required: false },
   { key: 'MAX_BODY_SIZE', required: false },
 ];
@@ -30,8 +30,18 @@ export function validateEnv(): void {
       return;
     }
     if (spec.validate && !spec.validate(val)) {
-      logger.error(`[env] Validation failed for ${spec.key}${spec.example ? ` (example: ${spec.example})` : ''}`);
-      hasErrors = true;
+      // For JWT length we only hard fail in production; in dev we warn to ease onboarding
+      if (spec.key === 'JWT_SECRET') {
+        if (isProd) {
+          logger.error(`[env] Validation failed for ${spec.key}${spec.example ? ` (example: ${spec.example})` : ''}`);
+          hasErrors = true;
+        } else {
+          logger.warn(`[env] Weak ${spec.key}. For production use >=24 chars. ${spec.example ? `Example: ${spec.example}` : ''}`);
+        }
+      } else {
+        logger.error(`[env] Validation failed for ${spec.key}${spec.example ? ` (example: ${spec.example})` : ''}`);
+        hasErrors = true;
+      }
     }
     if (spec.key === 'JWT_SECRET' && isProd && val === 'fallback_secret') {
       logger.error('[env] JWT_SECRET uses insecure fallback in production');

@@ -17,6 +17,7 @@ const HomePage = lazy(() => import('./pages/HomePage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const DebugPage = lazy(() => import('./pages/DebugPage'));
 const MultiUserDemoPage = lazy(() => import('./pages/MultiUserDemoPage'));
+const SimpleCursorTestPage = lazy(() => import('./pages/SimpleCursorTestPage'));
 
 // Optimized loading component
 const PageLoader = () => (
@@ -100,6 +101,11 @@ const App: React.FC = () => {
           <Route path="multi-user-demo" element={
             <Suspense fallback={<PageLoader />}>
               <MultiUserDemoPage />
+            </Suspense>
+          } />
+          <Route path="simple-cursors" element={
+            <Suspense fallback={<PageLoader />}>
+              <SimpleCursorTestPage />
             </Suspense>
           } />
           <Route path="rooms" element={

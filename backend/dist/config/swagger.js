@@ -283,7 +283,7 @@ const options = {
             },
         ],
     },
-    apis: ['./src/routes/*.ts', './src/controllers/*.ts'], // paths to files containing OpenAPI definitions
+    apis: ['./src/app/domains/**/*.ts', './src/app/common/middleware/*.ts'], // updated for domain structure
 };
 const specs = (0, swagger_jsdoc_1.default)(options);
 const setupSwagger = (app) => {

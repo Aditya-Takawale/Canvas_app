@@ -135,3 +135,27 @@ Canvas_app/
 - Auto-save functionality at regular intervals
 - Canvas history tracking
 - User-specific settings storage
+
+## Documentation Index
+
+The repository documentation has been organized into structured folders:
+
+### Features
+- Multi-User: `docs/features/multi-user/`
+- Cursor Visualization: `docs/features/cursor-visualization/`
+- Private Rooms: `docs/features/private-rooms/`
+- Fixes & Patches: `docs/features/fixes/`
+
+### Performance
+- Optimization Compendium: `docs/performance/`
+
+### Deployment
+- Deployment Guides: `docs/deployment/`
+
+### Setup
+- Environment & Startup: `docs/setup/`
+
+### Architecture & Evaluation
+- Comprehensive Project Evaluation: `PROJECT-EVALUATION.md`
+
+> Earlier individual Markdown files from the project root have been relocated into these directories to keep the root clean. Use version control history if you need their original locations.

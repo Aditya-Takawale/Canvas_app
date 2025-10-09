@@ -200,6 +200,70 @@ const RoomControls: React.FC<RoomControlsProps> = ({ webRTCRoom }) => {
           </div>
         </div>
       )}
+
+      {/* Canvas Snapshot Controls */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-gray-700 mb-1">Canvas Snapshots</p>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => {
+              const collabRoomId = (window as any).currentRoomId;
+              // Extract numeric room ID from "canvas-room-3" format
+              const roomId = collabRoomId?.replace('canvas-room-', '') || collabRoomId;
+              console.log('🔘 Restore button clicked, roomId:', roomId);
+              window.dispatchEvent(new CustomEvent('collab:restore-latest', { detail: { roomId } }));
+            }}
+            className="flex-1 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm"
+            title="Restore latest saved local snapshot"
+          >
+            ♻️ Restore Last
+          </button>
+          <button
+            onClick={() => {
+              try {
+                const collabRoomId = (window as any).currentRoomId;
+                // Extract numeric room ID from "canvas-room-3" format
+                const roomId = collabRoomId?.replace('canvas-room-', '') || collabRoomId;
+                console.log('🔘 Save button clicked, roomId:', roomId);
+                const canvas = (window as any).fabricActiveCanvas as any;
+                if (!canvas) {
+                  console.warn('⚠️ No canvas found on window.fabricActiveCanvas');
+                  return;
+                }
+                const state = canvas.toJSON(['_cid','createdBy','createdByName','createdByColor']);
+                const key = `canvasSnapshots:${roomId}`;
+                const existingRaw = localStorage.getItem(key);
+                const existing = existingRaw ? JSON.parse(existingRaw) : [];
+                existing.push({ timestamp: Date.now(), state });
+                while (existing.length > 10) existing.shift();
+                localStorage.setItem(key, JSON.stringify(existing));
+                console.log(`💾 Manual snapshot saved for room ${roomId}. Total: ${existing.length}`, {
+                  objectCount: state.objects?.length || 0,
+                  timestamp: new Date().toLocaleTimeString()
+                });
+              } catch(err) { 
+                console.error('❌ Failed manual snapshot:', err); 
+              }
+            }}
+            className="flex-1 px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm"
+            title="Save a manual snapshot of current canvas"
+          >
+            💾 Save Snapshot
+          </button>
+        </div>
+        <button
+          onClick={() => {
+            const collabRoomId = (window as any).currentRoomId;
+            const roomId = collabRoomId?.replace('canvas-room-', '') || collabRoomId;
+            console.log('🗑️ Clear canvas button clicked, roomId:', roomId);
+            window.dispatchEvent(new CustomEvent('collab:clear-canvas', { detail: { roomId } }));
+          }}
+          className="w-full px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm mt-2"
+          title="Clear all objects from canvas"
+        >
+          🗑️ Clear Canvas
+        </button>
+      </div>
     </div>
   );
 };

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Multi-User Canvas Cursors</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        canvas {
+            cursor: none;
+            background-image:
+                linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .cursor {
+            position: absolute;
+            pointer-events: none;
+            z-index: 1000;
+            transition: transform 0.1s ease-out;
+        }
+        .cursor-triangle {
+            width: 0;
+            height: 0;
+            border-left: 10px solid;
+            border-right: 0px solid transparent;
+            border-bottom: 15px solid transparent;
+            border-top: 5px solid transparent;
+        }
+        .cursor-label {
+            position: absolute;
+            left: 15px;
+            top: 0px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 flex flex-col items-center justify-center h-screen">
+
+    <div id="app-container" class="w-full h-full flex flex-col items-center justify-center p-4 md:p-6">
+        <div class="w-full max-w-5xl text-center mb-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-slate-900">Simple Multi-User Canvas</h1>
+            <p class="text-slate-600">Move your mouse to see your cursor. Open multiple tabs to test!</p>
+            <div id="user-info" class="mt-2 p-2 bg-slate-200 rounded-md text-sm text-slate-700 inline-block font-mono select-all">
+                Connecting...
+            </div>
+            <div id="status" class="mt-2 text-sm">
+                <span id="connection-status" class="text-red-500">Disconnected</span> | 
+                <span id="user-count">0 users online</span>
+            </div>
+        </div>
+
+        <div id="canvas-container" class="w-full max-w-5xl h-[70vh] bg-white rounded-xl shadow-lg border border-slate-200 relative">
+            <canvas id="shared-canvas" class="w-full h-full rounded-xl"></canvas>
+            <!-- Cursors will be dynamically added here -->
+        </div>
+        
+        <div class="text-center mt-4 text-xs text-slate-500">
+            <p>Powered by native WebSockets for real-time collaboration.</p>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let ws = null;
+        let userId = null;
+        let isConnected = false;
+        let cursors = new Map();
+        let localMousePos = { x: -100, y: -100 };
+
+        // DOM elements
+        const canvas = document.getElementById('shared-canvas');
+        const canvasContainer = document.getElementById('canvas-container');
+        const userInfoDiv = document.getElementById('user-info');
+        const connectionStatus = document.getElementById('connection-status');
+        const userCount = document.getElementById('user-count');
+
+        // Utility Functions
+        function stringToColor(str) {
+            if (!str) return '#3B82F6';
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const hue = Math.abs(hash) % 360;
+            return `hsl(${hue}, 70%, 50%)`;
+        }
+
+        function resizeCanvas() {
+            const { width, height } = canvas.getBoundingClientRect();
+            canvas.width = width;
+            canvas.height = height;
+        }
+
+        // WebSocket Functions
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket('ws://localhost:8080');
+                
+                ws.onopen = function() {
+                    console.log('✅ Connected to cursor server');
+                    isConnected = true;
+                    connectionStatus.textContent = 'Connected';
+                    connectionStatus.className = 'text-green-500';
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleMessage(message);
+                    } catch (error) {
+                        console.error('Error parsing message:', error);
+                    }
+                };
+
+                ws.onclose = function() {
+                    console.log('❌ Disconnected from cursor server');
+                    isConnected = false;
+                    connectionStatus.textContent = 'Disconnected';
+                    connectionStatus.className = 'text-red-500';
+                    
+                    // Attempt to reconnect after 2 seconds
+                    setTimeout(connectWebSocket, 2000);
+                };
+
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                };
+
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                setTimeout(connectWebSocket, 2000);
+            }
+        }
+
+        function handleMessage(message) {
+            switch(message.type) {
+                case 'USER_ID':
+                    userId = message.userId;
+                    userInfoDiv.textContent = `Your ID: ${userId}`;
+                    console.log('👤 Got user ID:', userId);
+                    break;
+
+                case 'CURSORS_UPDATE':
+                    updateCursors(message.cursors);
+                    break;
+
+                case 'PONG':
+                    // Heartbeat response
+                    break;
+
+                default:
+                    console.log('Unknown message type:', message.type);
+            }
+        }
+
+        function sendCursorUpdate(x, y) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'CURSOR_MOVE',
+                    x: x,
+                    y: y
+                }));
+            }
+        }
+
+        // Cursor Management
+        function updateCursors(cursorsData) {
+            const userCount = Object.keys(cursorsData).length;
+            document.getElementById('user-count').textContent = `${userCount} users online`;
+
+            // Remove old cursors that are no longer present
+            cursors.forEach((cursorElement, cursorUserId) => {
+                if (!cursorsData[cursorUserId]) {
+                    cursorElement.remove();
+                    cursors.delete(cursorUserId);
+                }
+            });
+
+            // Update or create cursors
+            Object.entries(cursorsData).forEach(([cursorUserId, cursor]) => {
+                if (cursorUserId === userId) return; // Don't show our own cursor
+
+                let cursorElement = cursors.get(cursorUserId);
+                
+                if (!cursorElement) {
+                    // Create new cursor
+                    cursorElement = createCursorElement(cursorUserId);
+                    canvasContainer.appendChild(cursorElement);
+                    cursors.set(cursorUserId, cursorElement);
+                }
+
+                // Update cursor position
+                updateCursorPosition(cursorElement, cursor.x, cursor.y);
+            });
+        }
+
+        function createCursorElement(cursorUserId) {
+            const color = stringToColor(cursorUserId);
+            
+            const cursorElement = document.createElement('div');
+            cursorElement.className = 'cursor';
+            cursorElement.style.color = color;
+            
+            cursorElement.innerHTML = `
+                <div class="cursor-triangle" style="border-left-color: ${color};"></div>
+                <div class="cursor-label">${cursorUserId.substring(5, 11)}</div>
+            `;
+            
+            return cursorElement;
+        }
+
+        function updateCursorPosition(cursorElement, x, y) {
+            // Hide cursor if off-screen
+            if (x < 0 || y < 0) {
+                cursorElement.style.display = 'none';
+            } else {
+                cursorElement.style.display = 'block';
+                cursorElement.style.transform = `translate(${x}px, ${y}px)`;
+            }
+        }
+
+        // Event Listeners
+        function setupEventListeners() {
+            // Mouse move on canvas
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                localMousePos = { 
+                    x: e.clientX - rect.left, 
+                    y: e.clientY - rect.top 
+                };
+                
+                sendCursorUpdate(localMousePos.x, localMousePos.y);
+            });
+
+            // Mouse leave canvas
+            canvas.addEventListener('mouseleave', () => {
+                localMousePos = { x: -100, y: -100 };
+                sendCursorUpdate(-100, -100);
+            });
+
+            // Window resize
+            window.addEventListener('resize', resizeCanvas);
+
+            // Clean up on page unload
+            window.addEventListener('beforeunload', () => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    sendCursorUpdate(-100, -100);
+                    ws.close();
+                }
+            });
+        }
+
+        // Heartbeat to keep connection alive
+        function startHeartbeat() {
+            setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'PING' }));
+                }
+            }, 25000);
+        }
+
+        // Initialize App
+        function initializeApp() {
+            resizeCanvas();
+            setupEventListeners();
+            connectWebSocket();
+            startHeartbeat();
+        }
+
+        // Start the app
+        window.addEventListener('load', initializeApp);
+    </script>
+</body>
+</html>
