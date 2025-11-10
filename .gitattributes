@@ -1,0 +1,5 @@
+# Ignore log files from language statistics
+*.log.* linguist-vendored
+*.log linguist-vendored
+backend/logs/* linguist-vendored
+logs/* linguist-vendored
